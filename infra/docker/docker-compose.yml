@@ -1,0 +1,333 @@
+name: campus-ctf-2026
+
+x-backend-secrets: &backend-secrets
+  - flag_encryption_key
+  - flag_hash_pepper
+  - student_id_encryption_key
+  - student_id_hash_pepper
+  - session_secret
+  - clear_view_token_secret
+  - claim_token_secret
+  - internal_service_token_01
+  - internal_service_token_02
+  - internal_service_token_03
+  - internal_service_token_04
+  - internal_service_token_05
+  - internal_service_token_06
+  - internal_service_token_07
+  - internal_service_token_08
+  - postgres_password
+
+x-challenge-service: &challenge-service
+  expose:
+    - "8080"
+  depends_on:
+    backend:
+      condition: service_healthy
+  networks:
+    - ctf_challenges
+  healthcheck:
+    test:
+      [
+        "CMD-SHELL",
+        "node -e \"fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+      ]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - ${NGINX_CONFIG_FILE:-../nginx/nginx.conf}:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      challenge-01:
+        condition: service_healthy
+      challenge-02:
+        condition: service_healthy
+      challenge-03:
+        condition: service_healthy
+      challenge-04:
+        condition: service_healthy
+      challenge-05:
+        condition: service_healthy
+      challenge-06:
+        condition: service_healthy
+      challenge-07:
+        condition: service_healthy
+      challenge-08:
+        condition: service_healthy
+    networks:
+      - ctf_public
+      - ctf_app
+      - ctf_challenges
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: apps/frontend/Dockerfile
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_BASE_PATH: /
+      BACKEND_INTERNAL_URL: http://backend:8080
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ctf_app
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
+    expose:
+      - "8080"
+    environment:
+      NODE_ENV: production
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost}
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: ${POSTGRES_DB:-campus_ctf}
+      DATABASE_USER: ${POSTGRES_USER:-campus_ctf}
+      DATABASE_PASSWORD_FILE: /run/secrets/postgres_password
+      REDIS_URL: redis://redis:6379
+      FLAG_ENCRYPTION_KEY_FILE: /run/secrets/flag_encryption_key
+      FLAG_HASH_PEPPER_FILE: /run/secrets/flag_hash_pepper
+      STUDENT_ID_ENCRYPTION_KEY_FILE: /run/secrets/student_id_encryption_key
+      STUDENT_ID_HASH_PEPPER_FILE: /run/secrets/student_id_hash_pepper
+      SESSION_SECRET_FILE: /run/secrets/session_secret
+      CLEAR_VIEW_TOKEN_SECRET_FILE: /run/secrets/clear_view_token_secret
+      CLAIM_TOKEN_SECRET_FILE: /run/secrets/claim_token_secret
+      INTERNAL_SERVICE_TOKEN_01_FILE: /run/secrets/internal_service_token_01
+      INTERNAL_SERVICE_TOKEN_02_FILE: /run/secrets/internal_service_token_02
+      INTERNAL_SERVICE_TOKEN_03_FILE: /run/secrets/internal_service_token_03
+      INTERNAL_SERVICE_TOKEN_04_FILE: /run/secrets/internal_service_token_04
+      INTERNAL_SERVICE_TOKEN_05_FILE: /run/secrets/internal_service_token_05
+      INTERNAL_SERVICE_TOKEN_06_FILE: /run/secrets/internal_service_token_06
+      INTERNAL_SERVICE_TOKEN_07_FILE: /run/secrets/internal_service_token_07
+      INTERNAL_SERVICE_TOKEN_08_FILE: /run/secrets/internal_service_token_08
+    secrets: *backend-secrets
+    volumes:
+      - artifact_data:/app/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ctf_app
+      - ctf_internal
+      - ctf_challenges
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-campus_ctf}
+      POSTGRES_USER: ${POSTGRES_USER:-campus_ctf}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ctf_internal
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ctf_internal
+
+  challenge-01:
+    <<: *challenge-service
+    environment:
+      NODE_ENV: production
+      BACKEND_INTERNAL_URL: http://backend:8080
+      INTERNAL_SERVICE_TOKEN_FILE: /run/secrets/internal_service_token_01
+    secrets:
+      - internal_service_token_01
+    build:
+      context: ../..
+      dockerfile: challenge-services/challenge-01/Dockerfile
+
+  challenge-02:
+    <<: *challenge-service
+    environment:
+      NODE_ENV: production
+      BACKEND_INTERNAL_URL: http://backend:8080
+      INTERNAL_SERVICE_TOKEN_FILE: /run/secrets/internal_service_token_02
+    secrets:
+      - internal_service_token_02
+    build:
+      context: ../..
+      dockerfile: challenge-services/challenge-02/Dockerfile
+
+  challenge-03:
+    <<: *challenge-service
+    environment:
+      NODE_ENV: production
+      BACKEND_INTERNAL_URL: http://backend:8080
+      INTERNAL_SERVICE_TOKEN_FILE: /run/secrets/internal_service_token_03
+    secrets:
+      - internal_service_token_03
+    build:
+      context: ../..
+      dockerfile: challenge-services/challenge-03/Dockerfile
+
+  challenge-04:
+    <<: *challenge-service
+    environment:
+      NODE_ENV: production
+      BACKEND_INTERNAL_URL: http://backend:8080
+      INTERNAL_SERVICE_TOKEN_FILE: /run/secrets/internal_service_token_04
+    secrets:
+      - internal_service_token_04
+    build:
+      context: ../..
+      dockerfile: challenge-services/challenge-04/Dockerfile
+
+  challenge-05:
+    <<: *challenge-service
+    environment:
+      NODE_ENV: production
+      BACKEND_INTERNAL_URL: http://backend:8080
+      INTERNAL_SERVICE_TOKEN_FILE: /run/secrets/internal_service_token_05
+    secrets:
+      - internal_service_token_05
+    build:
+      context: ../..
+      dockerfile: challenge-services/challenge-05/Dockerfile
+
+  challenge-06:
+    <<: *challenge-service
+    environment:
+      NODE_ENV: production
+      BACKEND_INTERNAL_URL: http://backend:8080
+      INTERNAL_SERVICE_TOKEN_FILE: /run/secrets/internal_service_token_06
+    secrets:
+      - internal_service_token_06
+    build:
+      context: ../..
+      dockerfile: challenge-services/challenge-06/Dockerfile
+
+  challenge-07:
+    <<: *challenge-service
+    environment:
+      NODE_ENV: production
+      BACKEND_INTERNAL_URL: http://backend:8080
+      INTERNAL_SERVICE_TOKEN_FILE: /run/secrets/internal_service_token_07
+    secrets:
+      - internal_service_token_07
+    build:
+      context: ../..
+      dockerfile: challenge-services/challenge-07/Dockerfile
+    volumes:
+      - challenge_07_state:/app/state
+
+  challenge-08:
+    <<: *challenge-service
+    environment:
+      NODE_ENV: production
+      BACKEND_INTERNAL_URL: http://backend:8080
+      INTERNAL_SERVICE_TOKEN_FILE: /run/secrets/internal_service_token_08
+    secrets:
+      - internal_service_token_08
+    build:
+      context: ../..
+      dockerfile: challenge-services/challenge-08/Dockerfile
+
+networks:
+  ctf_public:
+    driver: bridge
+  ctf_app:
+    driver: bridge
+    internal: true
+  ctf_internal:
+    driver: bridge
+    internal: true
+  ctf_challenges:
+    driver: bridge
+    internal: true
+
+volumes:
+  postgres_data:
+  redis_data:
+  artifact_data:
+  challenge_07_state:
+
+secrets:
+  flag_encryption_key:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/flag_encryption_key
+  flag_hash_pepper:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/flag_hash_pepper
+  student_id_encryption_key:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/student_id_encryption_key
+  student_id_hash_pepper:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/student_id_hash_pepper
+  session_secret:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/session_secret
+  clear_view_token_secret:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/clear_view_token_secret
+  claim_token_secret:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/claim_token_secret
+  internal_service_token_01:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/internal_service_token_01
+  internal_service_token_02:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/internal_service_token_02
+  internal_service_token_03:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/internal_service_token_03
+  internal_service_token_04:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/internal_service_token_04
+  internal_service_token_05:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/internal_service_token_05
+  internal_service_token_06:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/internal_service_token_06
+  internal_service_token_07:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/internal_service_token_07
+  internal_service_token_08:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/internal_service_token_08
+  postgres_password:
+    file: ${RUNTIME_SECRETS_DIR:-../../secrets/runtime-only}/postgres_password

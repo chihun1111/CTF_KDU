@@ -1,0 +1,37 @@
+{
+  "name": "backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "db:migrate": "node dist/database/migrate.js",
+    "db:seed": "node dist/database/seed.js",
+    "dev": "node --import tsx src/main.ts",
+    "start:prod": "node dist/main.js",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@campus-ctf/config": "workspace:*",
+    "@campus-ctf/db": "workspace:*",
+    "@campus-ctf/shared": "workspace:*",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "bcryptjs": "^3.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.0",
+    "drizzle-orm": "^0.45.0",
+    "pg": "^8.16.0",
+    "redis": "^5.12.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

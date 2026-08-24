@@ -1,0 +1,16 @@
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/tsconfig.tsbuildinfo
+.pnpm-store
+.git
+.env
+.env.*
+!.env.example
+secrets/runtime-only
+Docs
+Docs/problems
+Docs/development/flags
+Docs/plan
+.DS_Store
