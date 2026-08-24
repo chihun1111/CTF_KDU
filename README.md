@@ -1,107 +1,188 @@
 # KDU 교내 CTF
 
-컴퓨터공학과와 보안 학과 참가자를 위한 개인전 CTF 서비스입니다. 참가자는 로그인한
-사용자에게 각각 발급된 8개 플래그를 수집하고, 최종 제출을 통과하면 1회용 클리어
-인증 화면을 확인합니다.
+> 컴퓨터공학과·보안 관련 전공 학생을 위한 교육용 웹 보안 실습 대회
 
-> [!WARNING]
-> 이 저장소에는 의도적으로 취약한 challenge service가 포함됩니다. 취약점은 문제별
-> 격리 환경 안에만 있어야 하며 인증, session, PostgreSQL, Redis, 내부 API 및 운영자
-> 화면으로 확장하면 안 됩니다. 실제 secret, 학번, 플래그와 token 원문은 Git에 넣지
-> 마세요.
+본 프로젝트는 학생들이 실제 교내 서비스와 유사한 웹 환경을 직접 관찰하고 분석하며,
+웹 보안의 기본 원리와 안전한 개발 방법을 함께 익힐 수 있도록 만든 개인전 CTF
+(Capture The Flag) 서비스입니다.
 
-## 프로젝트 구성
+## 교수님께 검토를 요청드립니다
+
+이 저장소는 교내 CTF 진행 가능성을 검토받기 위한 서비스 구현물입니다. 참가자는 실제
+학교 시스템이 아닌 별도의 실습 환경에서 문제를 해결합니다. 문제 서비스는 별도
+컨테이너와 내부 네트워크에서 실행하고, 운영 DB와 Redis는 외부에 직접 공개하지
+않습니다.
+
+실제 대회는 교수님의 검토와 학교 운영 정책 확인, 운영 서버 사전 리허설을 마친 뒤
+진행하고자 합니다. 아래의 교육 목적, 안전 설계, 검증 결과와 협의 필요 항목을 검토해
+주시기를 부탁드립니다.
+
+## 대회 개요
+
+| 구분 | 내용 |
+| --- | --- |
+| 운영 형태 | 개인전 |
+| 참가 대상 | 교내 컴퓨터공학과·보안 관련 전공 학생 |
+| 문제 수 | 총 8개 |
+| 난이도 | 하 2개, 중 4개, 중상 2개 |
+| 학습 분야 | Web, Frontend, Database, Crypto, Misc |
+| 이용 방식 | 별도 설치 없이 웹 브라우저로 참가 |
+| 기본 언어 | 한국어 |
+| 완료 기준 | 참가자별 플래그 8개를 모두 제출한 뒤 1회용 클리어 인증 확인 |
+| 실행 환경 | 실제 학교 시스템과 분리된 Docker 기반 실습 환경 |
+
+## 교육 목표
+
+단순히 정답을 찾는 데 그치지 않고, 취약점이 생기는 원인과 방어 방법까지 생각할 수
+있도록 다음 학습 목표를 반영했습니다.
+
+- 웹 브라우저와 HTTP 요청·응답 구조를 관찰하고 이해합니다.
+- 인증, 세션, 접근 제어에서 신뢰 경계를 구분하는 방법을 익힙니다.
+- 프론트엔드에 공개되는 정보와 배포 산출물을 안전하게 관리하는 이유를 학습합니다.
+- 데이터 조회와 입력값 처리 과정에서 발생할 수 있는 보안 문제를 이해합니다.
+- 데이터 무결성과 암호 기술이 실제 서비스에서 어떻게 사용되는지 경험합니다.
+- 공격자의 관찰 방식과 개발자의 방어 관점을 함께 익힙니다.
+
+구체적인 풀이 방법, 플래그 위치와 내부 출제 메모는 참가자에게 공개하지 않습니다.
+
+## 참가자 진행 흐름
 
 ```text
-apps/
-├── backend/              # NestJS API, 인증, 제출, 운영 기능
-└── frontend/             # Next.js 참가자·운영자 화면
-packages/
-├── config/               # 환경 설정과 secret loader
-├── db/                   # Drizzle schema, migration, seed
-└── shared/               # 공용 schema와 타입
-challenge-services/
-└── challenge-01..08/     # 문제별 격리 서비스
-infra/
-├── docker/               # Docker Compose
-└── nginx/                # 단일 외부 진입점
-scripts/                    # 정적 검증, preflight, runtime smoke
-Docs/                       # 로컬 전용 기획·구현·운영 문서
+회원가입 → 로그인 → 8개 서비스 탐색 → 플래그 수집·제출 → 클리어 인증
 ```
 
-`Docs/`는 작업용 문서와 디자인 참고 자료를 한곳에 모은 로컬 전용 폴더이며 Git에서
-제외됩니다. 로컬 문서의 시작점은 `Docs/README.md`입니다. 다른 환경으로 옮겨야 할
-경우 Git과 별도로 백업해야 합니다.
+1. 참가자는 7자리 학번과 비밀번호로 개인 계정을 만듭니다.
+2. 계정마다 서로 다른 8개의 플래그가 자동으로 발급됩니다.
+3. 참가자는 일반 교내 서비스처럼 구성된 8개 화면을 탐색합니다.
+4. 수집한 플래그를 제출 화면에 입력하고 검증합니다.
+5. 최종 제출에 성공하면 대회 완료 증빙에 사용할 수 있는 1회용 클리어 화면을 확인합니다.
 
-## 요구 환경
+## 문제 구성
 
-- Node.js 24 이상
-- pnpm 10 이상
-- Docker Engine 및 Docker Compose plugin
-- Challenge 07 로컬 테스트용 `sqlite3` CLI
+| 단계 | 문제 수 | 난이도 | 학습 초점 |
+| --- | ---: | --- | --- |
+| 기초 | 2개 | 하 | 웹 페이지와 HTTP 통신의 기본 관찰 |
+| 응용 | 4개 | 중 | 접근 제어, 클라이언트 데이터와 배포 결과 분석 |
+| 심화 | 2개 | 중상 | 데이터베이스 보안과 데이터 무결성 검증 |
 
-정확한 Node.js 및 pnpm 범위는 `package.json`의 `engines`와 `packageManager`를
-확인합니다.
+각 문제는 독립된 교내 서비스 시나리오로 구성했습니다. 문제의 의도된 학습 범위를 벗어나
+다른 참가자 정보나 운영 시스템에 접근하지 못하도록 사용자와 서비스 경계를 분리합니다.
 
-## 개발 검증
+## 안전 및 개인정보 보호 설계
+
+- 실제 학교 서비스, 운영 DB와 개인정보를 문제 데이터로 사용하지 않습니다.
+- 문제 서비스는 각각 별도 컨테이너로 실행하며 외부에서 직접 접근할 수 없는 내부
+  네트워크에 배치합니다.
+- 외부 접속은 단일 Nginx 진입점으로 제한하고 DB, Redis와 내부 통신 영역은 직접
+  공개하지 않습니다.
+- 참가자마다 독립된 세션과 플래그를 사용하며, 필요한 문제 상태는 사용자별 인스턴스로
+  분리합니다.
+- 학번과 플래그는 원문 대신 암호문과 해시 중심으로 저장하며, 인증 토큰 원문은 서버
+  로그와 Git에 남기지 않습니다.
+- 문제 서비스에는 운영 DB 접속 정보나 전체 참가자의 플래그 관리 권한을 제공하지
+  않습니다.
+- 운영자 화면은 대회 진행에 필요한 집계와 비가역 가명 참조 기반 상태·제출 이력을
+  표시하며, 참가자의 인증 정보와 민감한 원문 데이터는 노출하지 않습니다.
+- 대회 전 민감정보 노출, 사용자 간 데이터 분리, 외부 공개 포트와 최종 제출 흐름을 다시
+  점검합니다.
+
+## 현재 준비 및 검증 상태
+
+2026년 8월 25일 로컬 사전 검증 기준 결과입니다. 이는 구현 검증 결과이며, 실제 운영
+승인을 대신하지 않습니다.
+
+| 검증 항목 | 결과 |
+| --- | --- |
+| 검증 스크립트 테스트(`scripts/*.test.mjs`) | 43/43 통과 |
+| 8개 문제 서비스 단위 테스트 | 48/48 통과 |
+| TypeScript 전체 빌드 | 통과 |
+| 일반 런타임 smoke test | 15개 항목 통과 |
+| 전체 문제 통합 smoke test | 2개 참가자 기준 8개 문제, 사용자 분리, 최종 제출, 1회용 클리어 흐름 통과 |
+| Docker Compose 실행 점검 | 로컬 리허설에서 13개 서비스 실행, healthcheck 대상 12개 정상 |
+
+한국어 참가자 화면과 반응형 제출 UI를 구현해 관련 정적 검증을 통과했으며, 운영자용
+접속 현황 집계와 Docker 기반 실행 구성까지 준비했습니다. 운영 서버에서는 아래 항목을
+확정한 뒤 동일한 검증을 다시 수행합니다.
+
+## 대회 진행 전 협의가 필요한 사항
+
+| 항목 | 확인할 내용 |
+| --- | --- |
+| 일정 | 대회 날짜, 운영 시간, 사전 리허설 일정 |
+| 참가 범위 | 대상 학과, 예상 참가 인원, 참가 신청 방식 |
+| 장소·네트워크 | 교내 진행 장소, 서버 위치, 외부 접속 허용 범위 |
+| 개인정보 | 학교 정책에 맞는 학번·쿠키·로그 안내 및 동의 문구 |
+| 보존 정책 | 참가자 계정과 운영 로그의 보존 기간 및 대회 종료 후 파기 방식 |
+| 운영 체계 | 총괄 담당자, 현장 지원 인원, 장애·보안 사고 연락 체계 |
+| 최종 승인 기준 | 운영 secret, 백업·초기화, 로그 점검과 전체 리허설 결과 |
+
+위 항목을 교수님과 협의해 확정한 뒤, 참가자 안내문과 최종 운영 체크리스트에
+반영하겠습니다.
+
+학교 정책 검토와 운영 서버 리허설을 모두 마치면, 확정된 운영 범위 안에서 대회를
+진행할 수 있는지 최종 승인받고자 합니다.
+
+## 시스템 구성
+
+```text
+참가자 웹 브라우저
+        │
+        ▼
+  Nginx 단일 진입점
+        │
+        ├── 참가자·운영자 화면
+        ├── 인증·제출 API
+        └── 8개 문제 서비스
+                 │
+                 └── 격리된 내부 데이터 영역
+```
+
+주요 기술은 Next.js, NestJS, TypeScript, PostgreSQL, Redis, Nginx와 Docker Compose를
+사용합니다. Compose 기준으로 Nginx, Frontend, Backend, PostgreSQL, Redis와 8개 문제
+서비스를 포함한 총 13개 서비스로 구성됩니다.
+
+## 개발 및 검증 방법
+
+필요한 개발 환경은 Node.js 24 이상, pnpm 10 이상, Docker Engine과 Docker Compose
+plugin입니다.
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm test
 pnpm build
 ```
 
-주요 개별 검증 명령은 다음과 같습니다.
-
-```bash
-pnpm verify:workspace
-pnpm verify:docs
-pnpm verify:ui
-pnpm verify:sensitive
-pnpm verify:compose
-```
-
-검증이 실패하면 성공한 것으로 보고하지 말고, 실패한 단계와 원인을 먼저 확인합니다.
-
-## Docker 실행
-
-`.env.production`과 `secrets/runtime-only/`의 필수 secret이 준비된 환경에서 실행합니다.
+최초 운영 환경에서는 필수 secret을 별도로 준비한 뒤 데이터 서비스 기동, DB migration,
+challenge metadata seed, 전체 서비스 기동 순서로 실행합니다.
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml --env-file .env.production build
+docker compose -f infra/docker/docker-compose.yml --env-file .env.production up -d postgres redis
+docker compose -f infra/docker/docker-compose.yml --env-file .env.production \
+  run --rm backend node apps/backend/dist/database/migrate.js
+docker compose -f infra/docker/docker-compose.yml --env-file .env.production \
+  run --rm backend node apps/backend/dist/database/seed.js
 docker compose -f infra/docker/docker-compose.yml --env-file .env.production up -d
 docker compose -f infra/docker/docker-compose.yml --env-file .env.production ps
 ```
 
-최초 환경에서는 backend migration과 seed가 먼저 필요합니다. 자세한 순서와 운영
-체크리스트는 로컬 문서 `Docs/development/operations/03-docker-ubuntu-sandbox.md`를
-확인합니다. 데이터 초기화가 필요한 것이 아니라면 `down --volumes`를 실행하지 마세요.
+전체 테스트와 배포 전 통합 검증은 별도 관리하는 내부 문서와 운영 설정이 포함된 공식
+운영 작업 공간에서 수행합니다. 공개 저장소만 clone한 환경에는 내부 문서가 없으므로
+아래 명령의 전체 검증 범위를 실행할 수 없습니다.
 
-## 외부 서비스 구조
+```bash
+pnpm test
+pnpm preflight:deploy
+```
 
-- 외부 공개 포트는 Nginx만 사용합니다.
-- Frontend, Backend, PostgreSQL, Redis와 challenge service는 내부 network에서만
-  통신합니다.
-- `/internal/*`은 브라우저에서 직접 접근할 수 없어야 합니다.
-- 참가자 화면은 한국어를 기본으로 하며 개별 서비스 화면은 일반 교내 서비스처럼
-  보이도록 구성합니다.
+데이터 초기화가 필요한 경우가 아니라면 Docker volume을 삭제하는 명령은 실행하지
+않습니다.
 
-## 보안 불변 조건
+## 문서 공개 범위
 
-- 현재 사용자는 `ctf_session`의 서버측 session 조회 결과로만 결정합니다.
-- URL, query string, form field 또는 클라이언트 신뢰 헤더로 사용자를 선택하지 않습니다.
-- challenge service에는 운영 DB credential과 `FLAG_*` secret을 제공하지 않습니다.
-- 학번, 플래그, 제출값, session·clear·claim token 원문을 로그에 남기지 않습니다.
-- 참가자 공개 화면에 내부 API, secret 이름, 출제자 메모와 의도된 풀이를 노출하지
-  않습니다.
-- 사용자 간 플래그, ticket, grant와 Challenge 07 SQLite instance가 섞이면 안 됩니다.
+출제자용 상세 명세, 문제 풀이, 운영 체크리스트와 디자인 참고 자료는 내부 정보 보호를
+위해 별도 문서로 관리하며 이 Git 저장소에는 포함하지 않습니다. 교수님 검토에 필요한
+자료는 요청 시 별도로 제출할 수 있습니다.
 
-## 문서와 작업 규칙
-
-- 루트 `AGENTS.md`는 자동화 도구와 작업자가 따라야 하는 운영 지침이므로 이동하지
-  않습니다.
-- 현재 기준 문서, 과거 초안과 Stitch 결과물의 구분은 `Docs/README.md`를 따릅니다.
-- API, DB, 공개 문구, 문제 풀이 흐름 또는 보안 정책을 바꾸면 관련 구현과 검증도 함께
-  갱신합니다.
-- 실제 credential이 포함될 수 있는 `secrets/runtime-only/`는 일반 문서 폴더로 옮기거나
-  공개하지 않습니다.
+운영용 credential, 참가자 개인정보, 실제 플래그와 인증 토큰 원문은 Git에 저장하지
+않습니다. 본 프로젝트는 반드시 승인된 교내 교육 목적과 통제된 실습 환경에서만
+운영합니다.
