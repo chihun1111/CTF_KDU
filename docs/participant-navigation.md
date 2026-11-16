@@ -96,6 +96,27 @@
 
 ## 검증 범위와 상태
 
+### 메인·풀이 화면의 난이도 표시
+
+2026-11-16(Asia/Seoul)에 구현 커밋
+[c498c53](https://github.com/chihun1111/CTF_KDU/commit/c498c53000ad153f260822e666b33cd1536b9440)을 검증했다.
+[CI #43852591122](https://github.com/chihun1111/CTF_KDU/actions/runs/43852591122)와
+[Runtime #43852590962](https://github.com/chihun1111/CTF_KDU/actions/runs/43852590962)가 모두 통과했다.
+
+- 메인 카드의 `난이도: ...` 문구와 실제 문제 8개의 상단 배지를 데스크톱·모바일에서 확인했다.
+  기존 브라우저 시나리오 2개에서 각 문제 배지의 표시 여부와 정확한 문구를 검사한다.
+- 실행 검사는 8개 문제의 표시 문구·등급 숫자를 공개 카탈로그와 대조한다. 상세 조회·검색 결과·티켓 확인 화면에도 같은 표시를 유지한다.
+- 테스트 360개와 전체 빌드·타입 검사, 기존 풀이 경로·참가자 격리·최종 제출·인증·DB·Redis 복구 검사가 통과했다.
+- 두 화면 크기에서 메인 → 각 문제 진입은 탐색 1회이며, 모바일 문서 폭은 390px을 유지했다.
+
+[브라우저 증거 artifact #14218930654](https://github.com/chihun1111/CTF_KDU/actions/runs/43852590962/artifacts/14218930654)는
+값을 가린 PNG 20개와 관찰 JSON 2개를 포함한다. 메인의 데스크톱·모바일 화면과
+모바일 01·02·07 검색 결과·08 화면을 육안 검토해 네 단계 난이도 배지의 위치와 줄바꿈을 확인했다.
+artifact SHA-256: `757d93c0b2d557258d97b6a46e6b2ef5687451236e72899dd966a39d20233686`.
+artifact는 workflow 정책에 따라 7일간 보관한다.
+
+### 이전 URL 구성·모바일 보정 검증
+
 확인일은 2026-11-16(Asia/Seoul)이며, 검증 대상은 모바일 보정까지 포함한 구현 커밋
 [3be2e70](https://github.com/chihun1111/CTF_KDU/commit/3be2e707c317af40436d29670b43fa02cef54e5a)다.
 [CI #43851206360](https://github.com/chihun1111/CTF_KDU/actions/runs/43851206360)와
