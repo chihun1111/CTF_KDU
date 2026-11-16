@@ -17,6 +17,7 @@
     "smoke:challenges": "node scripts/runtime-challenge-smoke.mjs",
     "smoke:clear": "node scripts/runtime-clear-smoke.mjs",
     "smoke:runtime": "node scripts/runtime-smoke.mjs",
+    "test:browser": "playwright test",
     "secrets:generate": "node scripts/generate-runtime-secrets.mjs",
     "test": "pnpm verify:workspace && pnpm verify:docs && pnpm verify:ui && pnpm --filter @campus-ctf/config build && pnpm --filter @campus-ctf/db build && pnpm --filter @campus-ctf/shared build && node --test scripts/*.test.mjs && pnpm -r --if-present test",
     "verify:compose": "node scripts/verify-compose-static.mjs",
@@ -29,6 +30,7 @@
     "verify:workspace": "node scripts/verify-workspace.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "1.65.1",
     "@types/node": "^24.19.2",
     "typescript": "^5.9.3"
   }

@@ -55,6 +55,24 @@ jobs:
       - name: Verify database migrations against PostgreSQL
         if: ${{ !cancelled() && steps.start.outcome == 'success' }}
         run: node scripts/runtime-database-smoke.mjs
+      - name: Install Chromium for participant browser checks
+        id: browser_install
+        if: ${{ !cancelled() && steps.start.outcome == 'success' }}
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+      - name: Verify desktop and mobile participant browser flows
+        id: browser
+        if: ${{ !cancelled() && steps.start.outcome == 'success' && steps.browser_install.outcome == 'success' }}
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:8080
+        run: pnpm test:browser
+      - name: Save masked browser screenshots and observations
+        if: ${{ !cancelled() && steps.browser.outcome != 'skipped' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # verified v4
+        with:
+          name: participant-browser-review
+          path: artifacts/browser/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Verify participant flow
         if: ${{ !cancelled() && steps.start.outcome == 'success' }}
         run: pnpm smoke:runtime --base-url http://localhost:8080

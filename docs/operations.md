@@ -117,6 +117,28 @@ heartbeat가 동작하며 과거 heartbeat를 재전송할 대기열을 쌓지 �
 실행하며 잠금 대기 10초, 문장 실행 120초, 응답 대기 130초 제한을 사용합니다. 대규모 인덱스 생성은
 유지보수 시간에 리허설 데이터를 기준으로 소요 시간을 확인합니다.
 
+### 참가자 브라우저 검사
+
+일회성 Compose 리허설 스택을 시작하고 공통 config 패키지를 빌드한 후 다음 명령을
+실행합니다. `test:browser`는 localhost 주소만 허용하며 새 참가자 계정을 만듭니다.
+
+```bash
+corepack pnpm exec playwright install --with-deps --only-shell chromium
+PLAYWRIGHT_BASE_URL=http://localhost:8080 corepack pnpm test:browser
+```
+
+Chromium에서 가입·로그인, 8개 서비스 진입, 01~06 공개 단서 확인, 07 정상 검색,
+08 원본 guest 티켓 확인, 부분 제출·새로고침·후속 제출과 일회성 인증 화면을 검사합니다.
+최종 인증 화면 검사에는 Compose DB에서 읽은 **07·08 테스트 정답**을 사용합니다.
+이 단계는 두 문제를 브라우저에서 독립적으로 풀었다는 증거가 아닙니다.
+별도의 `smoke:challenges`가 8개 문제의 기존 풀이 경로와 사용자 격리를 검사합니다.
+
+390×844 화면 폭에서도 서비스와 검색·제출 폼을 검사합니다. 이는 Chromium의 좁은
+viewport 검사이며 실제 휴대폰, Safari, 터치 조작 또는 초심자의 성공률 검사가 아닙니다.
+CI는 입력값·정답 패널·인증 식별값을 가린 스크린샷과 수치 관찰을
+`participant-browser-review` artifact로 7일간 보관합니다. 쿠키 저장 파일, 비디오와
+trace는 업로드하지 않습니다. 자세한 판정은 [참가자 관점 보고서](playability-review-2026-11-16.md)를 참고하세요.
+
 ### 장애 및 migration 회귀 검증
 
 Runtime integration CI는 일반 사용자 흐름 외에 실제 PostgreSQL에서 migration 재실행,

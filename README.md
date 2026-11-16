@@ -94,6 +94,7 @@ KDU 교내 CTF는 실제 교내 서비스와 유사한 화면에서 웹 보안 �
 
 - [1차 보강 내역과 검증 결과](docs/review-2026-11-16.md)
 - [후속 보강 내역과 장애·동시성 검증](docs/review-followup-2026-11-16.md)
+- [참가자 관점 풀이·제출 흐름 검토](docs/playability-review-2026-11-16.md)
 - [설치·운영·백업·secret 교체 가이드](docs/operations.md)
 - [자동 테스트·빌드 워크플로](.github/workflows/ci.yml)
 - [Docker 전체 흐름 검증 워크플로](.github/workflows/runtime.yml)
