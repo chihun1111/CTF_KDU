@@ -20,13 +20,13 @@ export type OnlineCountFallbackStore = {
 
 export class OnlineCountService {
   constructor(
-    private readonly presenceStore: OnlineCountPresenceStore,
+    private readonly presenceStore: OnlineCountPresenceStore | null,
     private readonly fallbackStore: OnlineCountFallbackStore,
   ) {}
 
   async getOnlineCount(now = new Date()): Promise<OnlineCountResult> {
     try {
-      const redisCount = await this.presenceStore.countActiveSessions();
+      const redisCount = await this.presenceStore?.countActiveSessions() ?? 0;
       if (redisCount > 0) {
         return {
           onlineSessionCount: redisCount,

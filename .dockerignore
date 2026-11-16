@@ -17,3 +17,4 @@ Docs/problems
 Docs/development/flags
 Docs/plan
 .DS_Store
+packages/db/drizzle-drafts

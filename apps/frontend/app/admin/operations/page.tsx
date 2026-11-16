@@ -2,7 +2,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AdminOperationsAutoRefresh } from "../../components/admin-operations-auto-refresh";
 import { AdminPagination } from "../../components/admin-pagination";
+import { AuditLogDialog } from "../../components/audit-log-dialog";
 import { LogoutButton } from "../../components/logout-button";
+import { FlagResultList } from "../../components/flag-result-list";
 import { parseAdminPages } from "../../lib/admin-pagination";
 import {
   getAdminClears,
@@ -17,7 +19,6 @@ import {
   getOnlineSessionCount,
 } from "../../lib/server-api";
 import {
-  FLAG_IDS,
   formatDateTime,
   type AdminAuditLogItem,
   type AdminChallengeStatusItem,
@@ -333,13 +334,7 @@ function SubmissionTable({ items, pagination }: { items: AdminSubmissionListItem
                 {item.requiredCount}개 중 {item.correctCount}개
               </td>
               <td>
-                <span className="compactResults">
-                  {FLAG_IDS.map((flagId) => (
-                    <span className={item.resultsByFlagId[flagId]?.correct ? "resultGood" : "resultBad"} key={flagId}>
-                      {flagId.slice(-2)}
-                    </span>
-                  ))}
-                </span>
+                <FlagResultList results={item.resultsByFlagId} />
               </td>
             </tr>
           ))}
@@ -444,28 +439,25 @@ function AuditLogTable({ items, pagination }: { items: AdminAuditLogItem[]; pagi
         <h2>감사 로그</h2>
         <p>운영 조회와 보안 이벤트를 팝업으로 확인합니다. 민감 원문은 표시하지 않습니다.</p>
       </div>
-      <a className="auditLaunchButton" href="#audit-logs-modal">
+      <a className="auditLaunchButton" href="#audit-logs-modal" id="audit-logs-trigger" aria-haspopup="dialog">
         <span>감사 로그 보기</span>
         <strong>{items.length}개</strong>
       </a>
-      <section aria-labelledby="audit-logs-title" className="auditModal" id="audit-logs-modal" role="dialog">
-        <a aria-label="감사 로그 닫기" className="auditModalBackdrop" href="#audit-logs" />
-        <div className="auditModalPanel">
-          <div className="auditModalHeader">
-            <div>
-              <h2 id="audit-logs-title">감사 로그</h2>
-              <p>최근 운영 이벤트</p>
-            </div>
-            <a className="secondaryLink compactModalClose" href="#audit-logs">
-              닫기
-            </a>
+      <AuditLogDialog>
+        <div className="auditModalHeader">
+          <div>
+            <h2 id="audit-logs-title">감사 로그</h2>
+            <p>최근 운영 이벤트</p>
           </div>
-          <div className="adminTablePanel auditModalTable">
-            <AuditLogRows items={items} />
-            {pagination}
-          </div>
+          <form method="dialog">
+            <button className="secondaryLink compactModalClose" type="submit" autoFocus>닫기</button>
+          </form>
         </div>
-      </section>
+        <div className="adminTablePanel auditModalTable">
+          <AuditLogRows items={items} />
+          {pagination}
+        </div>
+      </AuditLogDialog>
     </article>
   );
 }

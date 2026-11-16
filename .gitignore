@@ -1,6 +1,7 @@
 .DS_Store
 
 # Dependencies and generated output
+/packages/db/drizzle-drafts/
 node_modules/
 .pnpm-store/
 .next/

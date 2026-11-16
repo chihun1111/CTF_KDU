@@ -33,7 +33,7 @@ corepack pnpm secrets:generate
 corepack pnpm verify:secrets
 docker compose -f infra/docker/docker-compose.yml --env-file .env.production config --quiet
 docker compose -f infra/docker/docker-compose.yml --env-file .env.production build
-docker compose -f infra/docker/docker-compose.yml --env-file .env.production up -d postgres redis
+docker compose -f infra/docker/docker-compose.yml --env-file .env.production up -d --wait postgres redis
 docker compose -f infra/docker/docker-compose.yml --env-file .env.production \
   run --rm backend node apps/backend/dist/database/migrate.js
 docker compose -f infra/docker/docker-compose.yml --env-file .env.production \
@@ -56,8 +56,11 @@ Compose의 파일 기반 secret은 호스트 파일 권한을 그대로 적용�
 `internal_service_token_07`은 그 UID가 읽을 수 있어야 합니다. UID 1000 계정에서
 생성하는 것이 기본 운영 조건입니다. 다른 UID로 생성했다면 운영자가 **해당 파일만**
 UID 1000 소유로 조정하고 secret 검증은 파일을 읽을 권한이 있는 계정으로 실행하세요.
-파일을 0644로 공개해서 해결하지 마세요. 기존 `challenge_07_state` 볼륨도 UID 1000의
-쓰기 권한이 필요합니다.
+파일을 0644로 공개해서 해결하지 마세요. 07번의 재생성 가능한 SQLite 상태는 UID/GID
+1000, 권한 0700, 64MiB tmpfs에만 기록합니다. 루트 파일시스템은 읽기 전용이며 검색
+요청이 끝나면 임시 디렉터리를 삭제합니다. 이전 버전의 `challenge_07_state` 볼륨은
+더 이상 연결하지 않으며 자동으로 삭제하지 않습니다. 보존 정책을 확인한 뒤 해당
+볼륨만 별도로 정리하세요.
 
 frontend는 비특권 사용자로 실행합니다. backend와 01~06·08 서비스는 기존 0600 secret
 호환성을 위해 root 실행을 유지하되 `no-new-privileges`와 capability 제한을 적용합니다.
@@ -97,9 +100,30 @@ corepack pnpm smoke:clear --base-url http://localhost:8080
 `--skip-image-pulls`를 사용할 수 있습니다. 신규 이미지 다운로드에는
 `--image-timeout-ms 120000`처럼 충분한 시간을 지정하세요.
 
-운영자 목록은 페이지당 50건으로 조회합니다. 서비스 상태는 실제 `/health` 요청 결과를
+운영자 목록은 페이지당 50건으로 조회하며, 최신 점수·제출 수·풀이 인원 집계에는 전역
+1,000/5,000건 절단을 적용하지 않습니다. 참가자 운영 통계에서 관리자 연습 데이터는
+제외합니다. 서비스 상태는 실제 `/health` 요청 결과를
 사용하며 응답 제한과 짧은 캐시를 적용합니다. 브라우저 관리자 힌트 공개 요청은 동일
 origin만 허용됩니다. 로그인, 제출, 인증 소비 응답은 캐시하면 안 됩니다.
+
+Redis는 접속 현황 캐시입니다. 미설정·장애 시 온라인 수는 DB의 최근 세션 활동으로
+대체하고, Redis 연결이 복구되면 자동으로 다시 사용합니다. 장애 중에도 DB 인증과
+heartbeat가 동작하며 과거 heartbeat를 재전송할 대기열을 쌓지 않습니다. Redis 명령은
+1초, 연결 후 초기 handshake는 3초로 제한합니다. 공개 `/api/health`는 `SELECT 1`과
+`PING`을 사용하며 검사당 1.5초 제한, 동시 요청 병합과 1초 캐시를 적용합니다.
+
+애플리케이션 PostgreSQL 풀은 최대 10개, 연결 획득 2초, SQL 실행 5초, 클라이언트
+응답 7초, 트랜잭션 유휴 10초 제한을 사용합니다. 관리용 migration은 별도의 연결에서
+실행하며 잠금 대기 10초, 문장 실행 120초, 응답 대기 130초 제한을 사용합니다. 대규모 인덱스 생성은
+유지보수 시간에 리허설 데이터를 기준으로 소요 시간을 확인합니다.
+
+### 장애 및 migration 회귀 검증
+
+Runtime integration CI는 일반 사용자 흐름 외에 실제 PostgreSQL에서 migration 재실행,
+실패 시 롤백, 동시 실행, 적용 파일 변경 거부를 확인합니다. 또한 Redis를 중지한 채
+backend를 재시작하고 세션·로그인·heartbeat를 확인한 뒤 Redis 복구를 검증합니다.
+두 장애 검사 스크립트는 `CI=true`와 일회성 `ctf-ci-*` 프로젝트에서만 실행되며,
+운영 스택에서 실행할 명령으로 제공하지 않습니다.
 
 ## 4. 백업·복원·롤백
 
@@ -118,8 +142,28 @@ docker compose -f infra/docker/docker-compose.yml --env-file .env.production \
 별도 리허설 환경에 `pg_restore`로 복원한 뒤 migration/seed·로그인·최종 제출을
 확인합니다. 복원은 대상 DB를 덮어쓸 수 있으므로 운영 DB에 직접 시험하지 않습니다.
 롤백할 때는 이전 커밋과 그 버전의 이미지·환경 설정으로 되돌리고 DB 호환성을 확인합니다.
-이번 보강에는 스키마 변경이 없습니다. `down -v`는 PostgreSQL, Redis와 문제 상태를
+후속 보강은 기존 테이블의 데이터를 변경하지 않는 조회 인덱스 3개와 migration 이력
+테이블을 추가합니다. `down -v`는 PostgreSQL, Redis와 관련 볼륨을
 삭제하므로 정상 배포나 롤백에 사용하지 않습니다.
+
+### Migration 이력
+
+`db:migrate`는 `packages/db/drizzle/`의 `0000_*.sql`, `0001_*.sql`처럼 연속된 파일을
+순서대로 적용합니다. 이력이 없는 기존 설치는 원래의 멱등 초기 스키마를 확인·적용한
+뒤 신규 인덱스를 추가합니다. 이미 적용한 파일의 SHA-256과 이름은
+`ctf_schema_migrations`에 기록하며, 파일 변경·누락 또는 버전 간격을 발견하면 중단합니다.
+CRLF/LF 체크아웃 차이는 정규화합니다. 적용한 파일을 편집하지 말고 새 번호를 추가하세요.
+
+`corepack pnpm --filter @campus-ctf/db generate`는 검토용 SQL을 `drizzle-drafts/`에
+생성합니다. 이 폴더는 Git과 migration 실행 대상에서 제외합니다. 기존 초기 스키마는
+Drizzle의 snapshot 이력 없이 작성되었으므로 생성된 초안 전체를 운영 DB에 바로 적용하지
+마세요. 필요한 차이만 검토해 다음 번호의 `drizzle/NNNN_description.sql`로 작성하고
+기존 DB 복제본에서 검증합니다.
+
+동일 연결의 트랜잭션과 advisory lock 안에서 적용하므로 여러 runner가 동시에 실행되어도
+중복 적용하지 않습니다. SQL 실패 시 같은 실행에서의 신규 변경과 이력 기록을 함께
+롤백합니다. 변경 이력이 더 최신인 DB에 오래된 runner를 실행하면 누락된 migration을
+감지해 중단하므로, 애플리케이션 롤백과 DB 복원을 별도로 계획해야 합니다.
 
 ## 5. Secret 교체
 
@@ -148,8 +192,9 @@ docker compose -f infra/docker/docker-compose.yml --env-file .env.production \
 - 단일 backend·문제 서비스 인스턴스를 기준으로 합니다. 인증 속도 제한 및 08번 grant는
   프로세스 메모리에 있으므로 여러 복제본으로 확장하려면 공유 저장소 또는 세션 고정이
   필요합니다. 재시작하면 메모리 상태가 초기화됩니다.
-- 07번 SQLite 상태는 요청마다 세션을 재검증하고 읽기 전용으로 조회하지만, 디스크 파일을
-  자동 TTL 삭제하지는 않습니다. 대회 종료 후 보존 정책에 따라 정리합니다.
+- 07번 SQLite는 요청별 임시 DB·정렬 파일을 종료/실패/클라이언트 연결 종료 시 정리합니다.
+  프로세스당 SQLite heap 8MiB, 전체 상태 tmpfs 64MiB, 최대 8개 동시 실행을 사용합니다.
+  기존 버전이 만든 영구 볼륨과 개인정보·감사 로그의 보존 기간은 별도 운영 정책입니다.
 - SQL 실행 시간·출력·동시성에 제한이 있으며, 마지막 메모리 경계는 서비스 컨테이너
   제한입니다. 예상 동시 참가자 수로 부하 리허설을 수행해야 합니다.
 - 공개 Git 저장소에는 교육용 취약점 구현과 smoke 도우미가 들어 있습니다. 대회 중
@@ -157,4 +202,5 @@ docker compose -f infra/docker/docker-compose.yml --env-file .env.production \
 - 참가 자격 확인, 운영자 최초 지정, 개인정보 보존·파기 기간, 실제 대회 일정·TLS 인증서,
   백업 보관 위치는 운영자가 결정해야 합니다. 임의의 학교 정책을 기본값으로 만들지 않습니다.
 
-점검 결과와 검증 범위는 [보강 보고서](review-2026-11-16.md)를 참고하세요.
+점검 결과와 검증 범위는 [1차 보강 보고서](review-2026-11-16.md)와
+[후속 보강 보고서](review-followup-2026-11-16.md)를 참고하세요.

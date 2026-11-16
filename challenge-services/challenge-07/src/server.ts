@@ -1,10 +1,8 @@
-import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { dirname, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
 
 const serviceId = "service-07";
 const serviceName = "자유게시판";
@@ -118,6 +116,7 @@ const SERVICE_PAGE_STYLE = `
 `;
 
 class UpstreamUnavailableError extends Error {}
+class BoardCapacityError extends Error {}
 
 type Env = Record<string, string | undefined>;
 type SecretFileReader = (path: string) => Promise<string | Buffer>;
@@ -125,7 +124,7 @@ type FlagResponse = {
   flagId?: unknown;
   flag?: unknown;
 };
-type CurrentFlagFetcher = (cookieHeader: string | undefined) => Promise<string | null>;
+type CurrentFlagFetcher = (cookieHeader: string | undefined, signal?: AbortSignal) => Promise<string | null>;
 
 export async function readInternalServiceToken(
   env: Env = process.env,
@@ -162,19 +161,29 @@ export function buildFlagBackendRequest(input: {
   return { url: url.toString(), headers };
 }
 
-function getCookie(cookieHeader: string | undefined, name: string): string | null {
-  for (const part of cookieHeader?.split(";") ?? []) {
-    const [rawName, ...rawValue] = part.trim().split("=");
-    if (rawName === name) {
-      const value = rawValue.join("=").trim();
-      return value || null;
+/** Match backend cookie decoding before using a session token as a local identity. */
+export function readSessionToken(cookieHeader: string | undefined): string | null {
+  if (!cookieHeader || cookieHeader.length > 16_384) return null;
+  let token: string | null = null;
+  for (const part of cookieHeader.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator < 0 || part.slice(0, separator).trim() !== "ctf_session") continue;
+    if (token !== null) return null;
+    const encoded = part.slice(separator + 1).trim();
+    if (!encoded || encoded.length > 512) return null;
+    try {
+      const decoded = decodeURIComponent(encoded);
+      if (!/^[A-Za-z0-9_-]+$/.test(decoded)) return null;
+      token = decoded;
+    } catch {
+      return null;
     }
   }
-  return null;
+  return token;
 }
 
-async function fetchCurrentUserFlag(cookieHeader: string | undefined): Promise<string | null> {
-  if (!cookieHeader || !/(?:^|;)\s*ctf_session=[^;\s]+/.test(cookieHeader)) return null;
+async function fetchCurrentUserFlag(cookieHeader: string | undefined, signal?: AbortSignal): Promise<string | null> {
+  if (!readSessionToken(cookieHeader)) return null;
   const serviceToken = await readInternalServiceToken();
   if (!serviceToken) throw new UpstreamUnavailableError("Service authentication is unavailable");
 
@@ -186,7 +195,7 @@ async function fetchCurrentUserFlag(cookieHeader: string | undefined): Promise<s
     });
     const response = await fetch(backendRequest.url, {
       headers: backendRequest.headers,
-      signal: AbortSignal.timeout(5_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5_000)]) : AbortSignal.timeout(5_000),
       redirect: "error",
     });
     if (!response.ok) {
@@ -204,32 +213,35 @@ async function fetchCurrentUserFlag(cookieHeader: string | undefined): Promise<s
   }
 }
 
-export function buildInstancePath(cookieHeader: string, stateRoot = process.env.STATE_DIR?.trim() || defaultStateRoot): string {
-  const sessionToken = getCookie(cookieHeader, "ctf_session") ?? "missing-session";
-  const sessionKey = createHash("sha256").update(sessionToken).digest("hex");
-  return resolve(stateRoot, `${sessionKey}.sqlite`);
-}
-
 export function buildSearchSql(queryExpression: string): string {
   return `SELECT id, title, author FROM posts WHERE title LIKE '%${queryExpression}%'`;
 }
 
 const SQLITE_TIMEOUT_MS = 2_000;
 const SQLITE_MAX_OUTPUT_BYTES = 256 * 1024;
+const SQLITE_MAX_HEAP_BYTES = 8 * 1024 * 1024;
 const SQLITE_MAX_CONCURRENT = 8;
 let activeSqliteProcesses = 0;
 
-async function runSqlite(dbPath: string, statements: string[], readOnly = false): Promise<string> {
+async function runSqlite(dbPath: string, statements: string[], readOnly = false, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
   if (activeSqliteProcesses >= SQLITE_MAX_CONCURRENT) {
-    throw new Error("SQLite concurrency limit reached");
+    throw new BoardCapacityError("SQLite concurrency limit reached");
   }
   activeSqliteProcesses += 1;
   try {
     return await new Promise<string>((resolveOutput, reject) => {
       // The intentional SQL injection is limited to reading this session's database.
       // SQL goes in an argument, not stdin, so sqlite3 dot commands cannot run.
-      const args = ["-safe", "-batch", "-json", ...(readOnly ? ["-readonly"] : []), dbPath, statements.join("\n")];
-      const child = spawn("sqlite3", args, { stdio: ["ignore", "pipe", "pipe"] });
+      // Unlike soft_heap_limit, this limit cannot be raised again by injected SQL.
+      const sql = [`PRAGMA hard_heap_limit=${SQLITE_MAX_HEAP_BYTES};`, ...statements].join("\n");
+      const args = ["-safe", "-batch", "-json", ...(readOnly ? ["-readonly"] : []), dbPath, sql];
+      const child = spawn("sqlite3", args, {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, SQLITE_TMPDIR: dirname(dbPath) },
+        ...(signal ? { signal } : {}),
+        killSignal: "SIGKILL",
+      });
       const stdout: Buffer[] = [];
       let outputBytes = 0;
       let failure: Error | undefined;
@@ -257,7 +269,17 @@ async function runSqlite(dbPath: string, statements: string[], readOnly = false)
         clearTimeout(timeout);
         if (failure) reject(failure);
         else if (code !== 0) reject(new Error("SQLite query rejected in read-only safe mode"));
-        else resolveOutput(Buffer.concat(stdout).toString("utf8"));
+        else {
+          const output = Buffer.concat(stdout).toString("utf8");
+          const firstLineEnd = output.indexOf("\n");
+          try {
+            const configuration = JSON.parse(output.slice(0, firstLineEnd));
+            if (configuration[0]?.hard_heap_limit !== SQLITE_MAX_HEAP_BYTES) throw new Error("Invalid heap limit");
+            resolveOutput(output.slice(firstLineEnd + 1));
+          } catch {
+            reject(new Error("SQLite memory limit could not be verified"));
+          }
+        }
       });
     });
   } finally {
@@ -269,61 +291,63 @@ function sqlString(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
-const databaseInitializations = new Map<string, Promise<void>>();
-
-async function initializeBoardDatabase(dbPath: string, flag: string): Promise<void> {
-  await mkdir(dirname(dbPath), { recursive: true });
-  const temporaryPath = `${dbPath}.${randomBytes(8).toString("hex")}.tmp`;
-  try {
-    await runSqlite(temporaryPath, [
-      "BEGIN;",
-      "CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT NOT NULL, content TEXT NOT NULL, author TEXT NOT NULL);",
-      "CREATE TABLE flags (id INTEGER PRIMARY KEY, flag TEXT NOT NULL, source TEXT NOT NULL);",
-      "INSERT INTO posts (id, title, content, author) VALUES (1, '중간고사 일정 안내', '중간고사 기간에는 상담 운영이 축소됩니다.', '교무과');",
-      "INSERT INTO posts (id, title, content, author) VALUES (2, '교내 미니 축제 참가 안내', '부스 신청은 학생처 홈페이지에서 받습니다.', '축제기획단');",
-      "INSERT INTO posts (id, title, content, author) VALUES (3, '프로그래밍 과제 안내', '제출 양식과 마감 일정을 확인하세요.', '컴퓨터공학과');",
-      "INSERT INTO posts (id, title, content, author) VALUES (4, '도서관 운영 시간 변경 안내', '시험 기간 동안 야간 개방 시간이 연장됩니다.', '도서관');",
-      `INSERT INTO flags (id, flag, source) VALUES (1, ${sqlString(flag)}, 'runtime');`,
-      "COMMIT;",
-    ]);
-    // A cached path is visible only once all tables and the participant flag exist.
-    await rename(temporaryPath, dbPath);
-  } finally {
-    await rm(temporaryPath, { force: true });
-    await rm(`${temporaryPath}-journal`, { force: true });
-  }
+async function initializeBoardDatabase(dbPath: string, flag: string, signal?: AbortSignal): Promise<void> {
+  await runSqlite(dbPath, [
+    "BEGIN;",
+    "CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT NOT NULL, content TEXT NOT NULL, author TEXT NOT NULL);",
+    "CREATE TABLE flags (id INTEGER PRIMARY KEY, flag TEXT NOT NULL, source TEXT NOT NULL);",
+    "INSERT INTO posts (id, title, content, author) VALUES (1, '중간고사 일정 안내', '중간고사 기간에는 상담 운영이 축소됩니다.', '교무과');",
+    "INSERT INTO posts (id, title, content, author) VALUES (2, '교내 미니 축제 참가 안내', '부스 신청은 학생처 홈페이지에서 받습니다.', '축제기획단');",
+    "INSERT INTO posts (id, title, content, author) VALUES (3, '프로그래밍 과제 안내', '제출 양식과 마감 일정을 확인하세요.', '컴퓨터공학과');",
+    "INSERT INTO posts (id, title, content, author) VALUES (4, '도서관 운영 시간 변경 안내', '시험 기간 동안 야간 개방 시간이 연장됩니다.', '도서관');",
+    `INSERT INTO flags (id, flag, source) VALUES (1, ${sqlString(flag)}, 'runtime');`,
+    "COMMIT;",
+  ], false, signal);
 }
 
-export async function ensureBoardDatabase(
+let activeBoardRequests = 0;
+
+/** All board data is regenerated read-only puzzle data, scoped to this request. */
+export async function withBoardDatabase<T>(
   cookieHeader: string | undefined,
+  operation: (dbPath: string) => Promise<T>,
   fetchCurrentFlag: CurrentFlagFetcher = fetchCurrentUserFlag,
-): Promise<string | null> {
-  if (!cookieHeader || !getCookie(cookieHeader, "ctf_session")) return null;
-
-  // Cached puzzle state never replaces authentication: logout and expiry apply here too.
-  const flag = await fetchCurrentFlag(cookieHeader);
+  signal?: AbortSignal,
+): Promise<T | null> {
+  signal?.throwIfAborted();
+  const sessionToken = readSessionToken(cookieHeader);
+  if (!sessionToken) return null;
+  const flag = await fetchCurrentFlag(`ctf_session=${sessionToken}`, signal);
   if (!flag) return null;
+  signal?.throwIfAborted();
+  if (activeBoardRequests >= SQLITE_MAX_CONCURRENT) {
+    throw new BoardCapacityError("Board request capacity exceeded");
+  }
 
-  const dbPath = buildInstancePath(cookieHeader);
-  let initialization = databaseInitializations.get(dbPath);
-  if (!initialization && existsSync(dbPath)) return dbPath;
-  if (!initialization) {
-    initialization = initializeBoardDatabase(dbPath, flag);
-    databaseInitializations.set(dbPath, initialization);
-  }
+  activeBoardRequests += 1;
+  let directory: string | undefined;
   try {
-    await initialization;
+    const stateRoot = process.env.STATE_DIR?.trim() || defaultStateRoot;
+    await mkdir(stateRoot, { recursive: true, mode: 0o700 });
+    directory = await mkdtemp(join(stateRoot, "request-"));
+    const dbPath = join(directory, "board.sqlite");
+    await initializeBoardDatabase(dbPath, flag, signal);
+    signal?.throwIfAborted();
+    return await operation(dbPath);
   } finally {
-    if (databaseInitializations.get(dbPath) === initialization) databaseInitializations.delete(dbPath);
+    try {
+      if (directory) await rm(directory, { recursive: true, force: true });
+    } finally {
+      activeBoardRequests -= 1;
+    }
   }
-  return dbPath;
 }
 
-export async function searchPosts(dbPath: string, queryExpression: string): Promise<Array<Record<string, unknown>>> {
+export async function searchPosts(dbPath: string, queryExpression: string, signal?: AbortSignal): Promise<Array<Record<string, unknown>>> {
   if (Buffer.byteLength(queryExpression, "utf8") > 4_096) {
     throw new Error("Search query exceeds the size limit");
   }
-  const output = await runSqlite(dbPath, [buildSearchSql(queryExpression)], true);
+  const output = await runSqlite(dbPath, [buildSearchSql(queryExpression)], true, signal);
   return output.trim() ? (JSON.parse(output) as Array<Record<string, unknown>>) : [];
 }
 
@@ -431,23 +455,32 @@ export function renderErrorPage(): string {
 
 export function createChallengeServer() {
   return createServer((request, response) => {
-    void handleRequest(request, response).catch((error: unknown) => {
+    const cancellation = new AbortController();
+    const abortDisconnectedRequest = () => {
+      if (!response.writableFinished) cancellation.abort();
+    };
+    request.once("aborted", abortDisconnectedRequest);
+    response.once("close", abortDisconnectedRequest);
+    void handleRequest(request, response, cancellation.signal).catch((error: unknown) => {
       // Do not let a filesystem, upstream, or parsing failure terminate the service.
       if (response.destroyed || response.writableEnded) return;
       if (response.headersSent) {
         response.destroy();
         return;
       }
-      response.writeHead(error instanceof UpstreamUnavailableError ? 503 : 500, {
+      response.writeHead(error instanceof UpstreamUnavailableError || error instanceof BoardCapacityError ? 503 : 500, {
         "content-type": "text/plain; charset=utf-8",
         "cache-control": "no-store",
       });
       response.end("요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.\n");
+    }).finally(() => {
+      request.off("aborted", abortDisconnectedRequest);
+      response.off("close", abortDisconnectedRequest);
     });
   });
 }
 
-async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
+async function handleRequest(request: IncomingMessage, response: ServerResponse, signal: AbortSignal): Promise<void> {
   let url: URL;
   try {
     url = new URL(request.url ?? "/", "http://localhost");
@@ -476,8 +509,8 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
 
   if (url.pathname === "/") {
-    const dbPath = await ensureBoardDatabase(request.headers.cookie);
-    if (!dbPath) {
+    const flag = await fetchCurrentUserFlag(request.headers.cookie, signal);
+    if (!flag) {
       response.writeHead(401, {
         "content-type": "text/plain; charset=utf-8",
         "cache-control": "private, no-store",
@@ -494,8 +527,16 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
 
   if (url.pathname === "/search") {
-    const dbPath = await ensureBoardDatabase(request.headers.cookie);
-    if (!dbPath) {
+    const query = url.searchParams.get("q") ?? "";
+    const page = await withBoardDatabase(request.headers.cookie, async (dbPath) => {
+      try {
+        return { status: 200, html: renderSearchResults(query, await searchPosts(dbPath, query, signal)) };
+      } catch (error) {
+        if (signal.aborted || error instanceof BoardCapacityError) throw error;
+        return { status: 400, html: renderErrorPage() };
+      }
+    }, fetchCurrentUserFlag, signal);
+    if (!page) {
       response.writeHead(401, {
         "content-type": "text/plain; charset=utf-8",
         "cache-control": "private, no-store",
@@ -503,22 +544,11 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       response.end("로그인이 필요합니다.\n");
       return;
     }
-
-    const query = url.searchParams.get("q") ?? "";
-    try {
-      const rows = await searchPosts(dbPath, query);
-      response.writeHead(200, {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "no-store",
-      });
-      response.end(renderSearchResults(query, rows));
-    } catch {
-      response.writeHead(400, {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "no-store",
-      });
-      response.end(renderErrorPage());
-    }
+    response.writeHead(page.status, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    response.end(page.html);
     return;
   }
 

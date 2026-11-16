@@ -22,7 +22,9 @@ export class ApiOriginGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<BrowserRequest>();
     const path = request.path ?? request.url ?? "";
-    if (!path.startsWith("/api/") || ["GET", "HEAD", "OPTIONS"].includes(request.method?.toUpperCase() ?? "GET")) {
+    // Express matches route paths case-insensitively by default. Apply the same
+    // policy to every spelling that can reach a platform mutation handler.
+    if (!path.toLowerCase().startsWith("/api/") || ["GET", "HEAD", "OPTIONS"].includes(request.method?.toUpperCase() ?? "GET")) {
       return true;
     }
 

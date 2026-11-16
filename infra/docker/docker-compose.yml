@@ -157,8 +157,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     healthcheck:
       test:
         [
@@ -284,6 +282,7 @@ services:
 
   challenge-07:
     <<: *challenge-service
+    read_only: true
     environment:
       NODE_ENV: production
       BACKEND_INTERNAL_URL: http://backend:8080
@@ -293,8 +292,8 @@ services:
     build:
       context: ../..
       dockerfile: challenge-services/challenge-07/Dockerfile
-    volumes:
-      - challenge_07_state:/app/state
+    tmpfs:
+      - /app/state:size=64m,uid=1000,gid=1000,mode=0700,noexec,nosuid,nodev
 
   challenge-08:
     <<: *challenge-service
@@ -325,7 +324,6 @@ volumes:
   postgres_data:
   redis_data:
   artifact_data:
-  challenge_07_state:
 
 secrets:
   flag_encryption_key:

@@ -3,7 +3,7 @@ import { buildDatabaseUrl } from "./database-url.js";
 import { runChallengeSeed } from "./db-maintenance.js";
 
 async function main(): Promise<void> {
-  const pool = new Pool({ connectionString: buildDatabaseUrl() });
+  const pool = new Pool({ connectionString: buildDatabaseUrl(), connectionTimeoutMillis: 5_000, statement_timeout: 30_000, query_timeout: 35_000 });
 
   try {
     await runChallengeSeed(pool);

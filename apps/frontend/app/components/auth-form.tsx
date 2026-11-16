@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { consentVersion, loginFormSchema, registerFormSchema } from "../lib/auth-validation";
-import { getClientSession, loginParticipant, registerParticipant } from "../lib/client-api";
+import { authenticatedDestination, loginParticipant, registerParticipant, SessionCookieUnavailableError } from "../lib/client-api";
 
 type Mode = "login" | "register";
 
@@ -37,6 +37,7 @@ export function AuthForm({ mode }: AuthFormProps) {
     }
 
     setPending(true);
+    let credentialsAccepted = false;
     try {
       const response = isRegister
         ? await registerParticipant({
@@ -55,16 +56,11 @@ export function AuthForm({ mode }: AuthFormProps) {
           });
 
       if (response.ok) {
-        if (!isRegister) {
-          const session = await getClientSession();
-          if (session.authenticated && session.role === "admin") {
-            router.replace("/admin/operations");
-            router.refresh();
-            return;
-          }
-        }
-
-        router.replace("/hub");
+        credentialsAccepted = true;
+        setPassword("");
+        // Registration and login both issue a cookie; verify it before leaving
+        // this page so blocked cookies cannot produce a silent redirect loop.
+        router.replace(await authenticatedDestination());
         router.refresh();
         return;
       }
@@ -74,9 +70,22 @@ export function AuthForm({ mode }: AuthFormProps) {
         return;
       }
 
+      if (response.status >= 500) {
+        setMessage("인증 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해주세요.");
+        return;
+      }
+
       setMessage(isRegister ? "회원가입을 완료할 수 없습니다. 입력값을 확인해주세요." : "학번 또는 비밀번호를 확인해주세요.");
-    } catch {
-      setMessage("요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.");
+    } catch (error) {
+      if (error instanceof SessionCookieUnavailableError) {
+        setMessage(`${isRegister ? "회원가입은 완료되었습니다. " : ""}${error.message}`);
+      } else if (credentialsAccepted) {
+        setMessage(isRegister
+          ? "회원가입은 완료되었지만 로그인 상태를 확인하지 못했습니다. 잠시 후 로그인해주세요."
+          : "로그인 상태를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.");
+      } else {
+        setMessage("요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.");
+      }
     } finally {
       setPending(false);
     }
@@ -128,7 +137,7 @@ export function AuthForm({ mode }: AuthFormProps) {
           autoComplete={isRegister ? "new-password" : "current-password"}
           aria-describedby="password-help"
           disabled={pending}
-          maxLength={128}
+          maxLength={256}
           minLength={8}
           name="password"
           type="password"

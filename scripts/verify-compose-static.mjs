@@ -194,6 +194,14 @@ for (const challenge of CHALLENGE_SERVICES) {
   }
   assert(serviceNetworks(services[challenge]).includes("ctf_challenges"), `${challenge} must attach to ctf_challenges`);
 }
+
+const sqliteService = services["challenge-07"];
+assert(sqliteService?.read_only === true, "challenge-07 must have a read-only root filesystem");
+const sqliteState = (sqliteService?.tmpfs ?? []).find((entry) => typeof entry === "string" && entry.startsWith("/app/state:"));
+assert(
+  typeof sqliteState === "string" && ["size=64m", "uid=1000", "gid=1000", "mode=0700", "noexec", "nosuid", "nodev"].every((option) => sqliteState.split(/[:,]/).includes(option)),
+  "challenge-07 state must be a private bounded tmpfs",
+);
 if (failures.length > 0) {
   console.error("Compose static verification failed:");
   for (const failure of failures) {

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-async function startServer(t, createServer) {
+export async function startServer(t, createServer) {
   const server = createServer();
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -17,9 +17,9 @@ async function startServer(t, createServer) {
   return server.address().port;
 }
 
-function send(port, path, method = "GET", cookie = "ctf_session=runtime-test-session") {
+export function send(port, path, method = "GET", cookie = "ctf_session=runtime-test-session", headers = {}) {
   return new Promise((resolve, reject) => {
-    const req = request({ host: "127.0.0.1", port, path, method, headers: { cookie } }, (res) => {
+    const req = request({ host: "127.0.0.1", port, path, method, headers: { cookie, ...headers } }, (res) => {
       let body = "";
       res.setEncoding("utf8");
       res.on("data", (chunk) => { body += chunk; });
@@ -31,7 +31,7 @@ function send(port, path, method = "GET", cookie = "ctf_session=runtime-test-ses
   });
 }
 
-async function configureBackend(t) {
+export async function configureBackend(t) {
   const directory = await mkdtemp(join(tmpdir(), "challenge-http-test-"));
   const previous = {
     INTERNAL_SERVICE_TOKEN_FILE: process.env.INTERNAL_SERVICE_TOKEN_FILE,
@@ -96,6 +96,40 @@ export function registerHttpRuntimeTests({ createServer, challengeId, protectedP
 
     process.env.BACKEND_INTERNAL_URL = "not a URL";
     assert.equal((await send(port, protectedPath)).status, 503);
+    assert.equal((await send(port, "/health")).status, 200);
+  });
+
+  test(`challenge-${challengeId} cancels upstream work when the participant disconnects`, async (t) => {
+    await configureBackend(t);
+    const started = Promise.withResolvers();
+    const aborted = Promise.withResolvers();
+    t.mock.method(globalThis, "fetch", (_url, options) => new Promise((_resolve, reject) => {
+      started.resolve();
+      options.signal.addEventListener("abort", () => {
+        aborted.resolve();
+        reject(options.signal.reason);
+      }, { once: true });
+    }));
+    const port = await startServer(t, createServer);
+    const req = request({
+      host: "127.0.0.1", port, path: protectedPath,
+      headers: { cookie: "ctf_session=runtime-test-session" },
+    });
+    req.on("error", () => {});
+    req.end();
+    await started.promise;
+    req.destroy();
+    let timer;
+    try {
+      await Promise.race([
+        aborted.promise,
+        new Promise((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error("disconnected request kept upstream work running")), 1_000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
     assert.equal((await send(port, "/health")).status, 200);
   });
 }

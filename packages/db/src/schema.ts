@@ -1,4 +1,5 @@
 import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const challengeDifficulty = pgEnum("challenge_difficulty", ["하", "중", "중상"]);
 
@@ -120,7 +121,7 @@ export const finalSubmissions = pgTable("final_submissions", {
   correctCount: integer("correct_count").notNull(),
   isClear: boolean("is_clear").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [index("final_submissions_user_latest_idx").on(table.userId, table.createdAt.desc(), table.id.desc())]);
 
 export const finalSubmissionResults = pgTable("final_submission_results", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -134,7 +135,10 @@ export const finalSubmissionResults = pgTable("final_submission_results", {
   challengeId: text("challenge_id").notNull(),
   submittedFlagHash: text("submitted_flag_hash"),
   isCorrect: boolean("is_correct").notNull(),
-});
+}, (table) => [
+  index("final_submission_results_submission_idx").on(table.finalSubmissionId),
+  index("final_submission_results_solved_idx").on(table.flagId, table.userId).where(sql`${table.isCorrect} = true`),
+]);
 
 export const clears = pgTable(
   "clears",

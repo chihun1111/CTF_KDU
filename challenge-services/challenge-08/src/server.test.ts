@@ -1,4 +1,4 @@
-import { registerHttpRuntimeTests } from "../../test-support/http-runtime.mjs";
+import { configureBackend, registerHttpRuntimeTests, send, startServer } from "../../test-support/http-runtime.mjs";
 import { createChallengeServer } from "./server.js";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -14,6 +14,7 @@ import {
   parseTicketValue,
   readClaims,
   readInternalServiceToken,
+  readSessionToken,
   renderDeniedPage,
   renderPrizePage,
   renderVaultPage,
@@ -224,9 +225,10 @@ test("challenge-08 bounds outstanding grants and prunes expired entries", () => 
   let clock = 1_000_000;
   const store = createGrantStore(() => clock, 2);
   const original = store.issue("session-a");
+  clock += 1_000;
   const replacement = store.issue("session-a");
-  assert.equal(store.peek(original), undefined);
-  assert(store.peek(replacement));
+  assert.equal(replacement, original, "concurrent checks must preserve an already-issued redirect");
+  assert.equal(store.peek(replacement)?.expiresAt, 1_000_000 + 10 * 60 * 1_000, "rechecks must not extend the original grant lifetime");
   const other = store.issue("session-b");
   assert.throws(() => store.issue("session-c"), /capacity/);
   assert(store.peek(other), "capacity pressure must not invalidate another participant's grant");
@@ -285,6 +287,52 @@ test("challenge-08 derives different ticket keys for different sessions without 
   assert.notEqual(bindingA, bindingB);
   assert.equal(bindingA?.includes("opaque-a"), false);
   assert.notDeepEqual(deriveVaultKey("internal-token", bindingA!), deriveVaultKey("internal-token", bindingB!));
+  assert.equal(sessionBindingFromCookie("ctf_session=%6Fpaque-a"), bindingA, "percent encoding must not create a different session identity");
+  for (const cookie of [undefined, "", "ctf_session=", "ctf_session=%", "ctf_session=%252F", "ctf_session=bad%2Ftoken", "ctf_session=a; ctf_session=a", `ctf_session=${"a".repeat(513)}`]) {
+    assert.equal(readSessionToken(cookie), null);
+    assert.equal(sessionBindingFromCookie(cookie), null);
+  }
+});
+
+test("challenge-08 preserves concurrent check redirects and consumes a grant only on an intentional prize request", async (t) => {
+  await configureBackend(t);
+  let backendCalls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    backendCalls += 1;
+    return new Response(JSON.stringify({ flagId: "FLAG-08", flag: "KDUCTF" + "{grant_runtime}" }));
+  });
+  const store = createGrantStore();
+  const port = await startServer(t, () => createChallengeServer(store));
+  const sessionCookie = "ctf_session=runtime-test-session";
+  const binding = sessionBindingFromCookie(sessionCookie)!;
+  const winnerTicket = encodeTicketValue(deriveVaultKey("test-internal-token", binding), "role=winner");
+  const redirects = await Promise.all([
+    send(port, "/check", "POST", `${sessionCookie}; vault_ticket=${winnerTicket}`),
+    send(port, "/check", "POST", `ctf_session=%72untime-test-session; vault_ticket=${winnerTicket}`),
+  ]);
+  for (const response of redirects) assert.equal(response.status, 303);
+  assert.deepEqual(redirects[0]?.headers["set-cookie"], redirects[1]?.headers["set-cookie"]);
+  const accessCookies = redirects[0]?.headers["set-cookie"]?.map((value) => value.split(";", 1)[0]).join("; ");
+  assert(accessCookies);
+  const cookie = `${sessionCookie}; ${accessCookies}`;
+  const callsBeforeSpeculation = backendCalls;
+  for (const headers of [
+    { purpose: "prefetch" },
+    { "sec-purpose": "prefetch;prerender" },
+    { "sec-fetch-site": "same-origin", "sec-fetch-dest": "image" },
+    { "sec-fetch-site": "same-site", "sec-fetch-dest": "document" },
+    { "sec-fetch-site": "cross-site", "sec-fetch-dest": "empty" },
+  ] as Array<Record<string, string>>) {
+    const response = await send(port, "/prize", "GET", cookie, headers);
+    assert.equal(response.status, 403);
+    assert.equal(response.headers["cache-control"], "no-store");
+  }
+  assert.equal(backendCalls, callsBeforeSpeculation, "speculative requests must not authenticate or consume the grant");
+  assert.equal((await send(port, "/prize", "HEAD", cookie)).status, 405);
+  const accepted = await send(port, "/prize", "GET", cookie, { "sec-fetch-site": "same-origin", "sec-fetch-dest": "empty" });
+  assert.equal(accepted.status, 200, "same-origin fetch must remain usable by puzzle solvers");
+  assert(accepted.body.includes("KDUCTF" + "{grant_runtime}"));
+  assert.equal((await send(port, "/prize", "GET", cookie)).status, 403, "consumed grants must reject replay");
 });
 
 registerHttpRuntimeTests({ createServer: createChallengeServer, challengeId: "08" });

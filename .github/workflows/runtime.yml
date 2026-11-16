@@ -48,9 +48,13 @@ jobs:
         run: |
           docker compose -f infra/docker/docker-compose.yml --env-file .env.production up -d --wait postgres redis
           docker compose -f infra/docker/docker-compose.yml --env-file .env.production run --rm backend node apps/backend/dist/database/migrate.js
+          docker compose -f infra/docker/docker-compose.yml --env-file .env.production run --rm backend node apps/backend/dist/database/migrate.js
           docker compose -f infra/docker/docker-compose.yml --env-file .env.production run --rm backend node apps/backend/dist/database/seed.js
           docker compose -f infra/docker/docker-compose.yml --env-file .env.production up -d --wait --wait-timeout 180
           pnpm verify:compose-runtime
+      - name: Verify database migrations against PostgreSQL
+        if: ${{ !cancelled() && steps.start.outcome == 'success' }}
+        run: node scripts/runtime-database-smoke.mjs
       - name: Verify participant flow
         if: ${{ !cancelled() && steps.start.outcome == 'success' }}
         run: pnpm smoke:runtime --base-url http://localhost:8080
@@ -63,6 +67,9 @@ jobs:
       - name: Verify one-time certificate flow
         if: ${{ !cancelled() && steps.start.outcome == 'success' }}
         run: pnpm smoke:clear --base-url http://localhost:8080
+      - name: Verify Redis outage and automatic recovery
+        if: ${{ !cancelled() && steps.start.outcome == 'success' }}
+        run: node scripts/runtime-resilience-smoke.mjs
       - name: Show service diagnostics on failure
         if: failure()
         run: |

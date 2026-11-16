@@ -65,6 +65,35 @@ test("LoginRequestDto uses the same public credential validation as register", a
   assert.deepEqual(await validationErrors(dto), []);
 });
 
+test("login and registration preserve validator password boundaries for Unicode presentation sequences", () => {
+  const cases = [
+    { label: "ASCII", unit: "a", accepted: [8, 128], rejected: [7, 129] },
+    { label: "supplementary emoji", unit: "😀", accepted: [8, 128], rejected: [7, 129] },
+    { label: "emoji presentation", unit: "\u2764\uFE0F", accepted: [8, 128], rejected: [4, 7, 129] },
+    { label: "text presentation", unit: "\u2764\uFE0E", accepted: [8, 128], rejected: [7, 129] },
+    { label: "supplementary emoji presentation", unit: "😀\uFE0F", accepted: [8, 128], rejected: [7, 129] },
+    { label: "consecutive selectors", unit: "a\uFE0F\uFE0E", accepted: [4, 64], rejected: [3, 65] },
+    { label: "standalone selectors", unit: "\uFE0F", accepted: [8, 128], rejected: [7, 129] },
+    { label: "other BMP variation selector", unit: "a\uFE00", accepted: [4, 64], rejected: [3, 65] },
+    { label: "supplementary variation selector", unit: "a\u{E0100}", accepted: [4, 64], rejected: [3, 65] },
+    { label: "zero-width joiner sequence", unit: "👩‍💻", accepted: [3, 42], rejected: [2, 43] },
+  ];
+  const consent = { consentVersion: "unicode-boundaries", requiredLoggingAccepted: true, cookieAccepted: true };
+  for (const { label, unit, accepted, rejected } of cases) {
+    for (const count of accepted) {
+      const password = unit.repeat(count);
+      const input = { studentId: "2622022", password, consent };
+      assert.equal(parseLoginRequest(input).password, password, `${label} × ${count}`);
+      assert.equal(parseRegisterRequest(input).password, password, `${label} × ${count}`);
+    }
+    for (const count of rejected) {
+      const input = { studentId: "2622022", password: unit.repeat(count), consent };
+      assert.throws(() => parseLoginRequest(input), BadRequestException, `${label} × ${count}`);
+      assert.throws(() => parseRegisterRequest(input), BadRequestException, `${label} × ${count}`);
+    }
+  }
+});
+
 test("registration requires a single consent object, including when called outside ValidationPipe", async () => {
   for (const consent of [undefined, null, [], "yes", {}]) {
     const input = { studentId: "2622022", password: "valid-password", consent };

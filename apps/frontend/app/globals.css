@@ -768,6 +768,33 @@ h1 {
   grid-column: 1 / -1;
 }
 
+.submissionResults {
+  grid-column: 1 / -1;
+}
+
+.submissionResults p {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
+.flagResultList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+
+.flagResultList li {
+  white-space: nowrap;
+}
+
+.resultUnsubmitted {
+  color: var(--muted);
+}
+
 .flagField input {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
@@ -1048,7 +1075,7 @@ h1 {
 }
 
 .tableTextButton {
-  color: var(--ink);
+  color: var(--text);
   font-weight: 850;
   text-decoration: underline;
   text-decoration-thickness: 2px;
@@ -1083,7 +1110,7 @@ h1 {
   gap: 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--ink);
+  background: var(--text);
   padding: 22px;
   color: var(--surface);
   text-decoration: none;
@@ -1102,19 +1129,22 @@ h1 {
 .auditModal {
   position: fixed;
   inset: 0;
-  z-index: 50;
   display: none;
-  padding: 24px;
+  width: min(980px, calc(100% - 48px));
+  max-width: none;
+  max-height: calc(100vh - 48px);
+  margin: auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
 }
 
-.auditModal:target {
-  display: grid;
-  place-items: center;
+.auditModal[open] {
+  display: block;
 }
 
-.auditModalBackdrop {
-  position: absolute;
-  inset: 0;
+.auditModal::backdrop {
   background: rgb(15 23 42 / 0.62);
 }
 
@@ -1354,7 +1384,8 @@ code {
   }
 
   .auditModal {
-    padding: 12px;
+    width: calc(100% - 24px);
+    max-height: calc(100vh - 24px);
   }
 
   .auditModalPanel {

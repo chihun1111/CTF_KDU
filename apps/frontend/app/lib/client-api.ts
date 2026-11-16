@@ -1,4 +1,5 @@
 import type { FinalSubmitResult, FlagId, SessionState } from "./types";
+import { readSessionState } from "./auth-validation";
 
 type RegisterParticipantInput = {
   studentId: string;
@@ -55,7 +56,23 @@ export async function getClientSession(): Promise<SessionState> {
     throw new Error("인증 서비스에 연결하지 못했습니다.");
   }
 
-  return (await response.json()) as SessionState;
+  return readSessionState(await response.json());
+}
+
+export class SessionCookieUnavailableError extends Error {
+  constructor() {
+    super("로그인 쿠키가 유지되지 않았습니다. 쿠키 설정과 접속 주소를 확인해주세요.");
+    this.name = "SessionCookieUnavailableError";
+  }
+}
+
+/** A successful credential request is insufficient when the browser rejected its cookie. */
+export async function authenticatedDestination(): Promise<"/admin/operations" | "/hub"> {
+  const session = await getClientSession();
+  if (!session.authenticated) {
+    throw new SessionCookieUnavailableError();
+  }
+  return session.role === "admin" ? "/admin/operations" : "/hub";
 }
 
 export async function logoutParticipant(): Promise<void> {

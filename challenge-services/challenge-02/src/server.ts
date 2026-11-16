@@ -147,7 +147,7 @@ export function buildFlagBackendRequest(input: {
   return { url: url.toString(), headers };
 }
 
-async function fetchCurrentUserFlag(cookieHeader: string | undefined): Promise<string | null> {
+async function fetchCurrentUserFlag(cookieHeader: string | undefined, signal?: AbortSignal): Promise<string | null> {
   if (!cookieHeader || !/(?:^|;)\s*ctf_session=[^;\s]+/.test(cookieHeader)) return null;
   const serviceToken = await readInternalServiceToken();
   if (!serviceToken) throw new UpstreamUnavailableError("Service authentication is unavailable");
@@ -160,7 +160,7 @@ async function fetchCurrentUserFlag(cookieHeader: string | undefined): Promise<s
     });
     const response = await fetch(backendRequest.url, {
       headers: backendRequest.headers,
-      signal: AbortSignal.timeout(5_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5_000)]) : AbortSignal.timeout(5_000),
       redirect: "error",
     });
     if (!response.ok) {
@@ -276,7 +276,13 @@ loadStatus();
 
 export function createChallengeServer() {
   return createServer((request, response) => {
-    void handleRequest(request, response).catch((error: unknown) => {
+    const cancellation = new AbortController();
+    const abortDisconnectedRequest = () => {
+      if (!response.writableFinished) cancellation.abort();
+    };
+    request.once("aborted", abortDisconnectedRequest);
+    response.once("close", abortDisconnectedRequest);
+    void handleRequest(request, response, cancellation.signal).catch((error: unknown) => {
       // Do not let a filesystem, upstream, or parsing failure terminate the service.
       if (response.destroyed || response.writableEnded) return;
       if (response.headersSent) {
@@ -288,6 +294,9 @@ export function createChallengeServer() {
         "cache-control": "no-store",
       });
       response.end("요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.\n");
+    }).finally(() => {
+      request.off("aborted", abortDisconnectedRequest);
+      response.off("close", abortDisconnectedRequest);
     });
   });
 }
@@ -300,7 +309,7 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
   response.end(JSON.stringify(body));
 }
 
-async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
+async function handleRequest(request: IncomingMessage, response: ServerResponse, signal: AbortSignal): Promise<void> {
   let url: URL;
   try {
     url = new URL(request.url ?? "/", "http://localhost");
@@ -356,7 +365,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
 
   if (url.pathname === "/api/status") {
-    const flag = await fetchCurrentUserFlag(request.headers.cookie);
+    const flag = await fetchCurrentUserFlag(request.headers.cookie, signal);
     if (!flag) {
       sendJson(response, 401, { error: "로그인이 필요합니다." });
       return;
@@ -366,7 +375,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
 
   if (url.pathname === "/api/debug") {
-    const flag = await fetchCurrentUserFlag(request.headers.cookie);
+    const flag = await fetchCurrentUserFlag(request.headers.cookie, signal);
     if (!flag) {
       sendJson(response, 401, { error: "로그인이 필요합니다." });
       return;

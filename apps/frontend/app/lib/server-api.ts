@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { readSessionState } from "./auth-validation";
 import type {
   AdminOperationsSummary,
   AdminAuditLogItem,
@@ -94,7 +95,7 @@ export async function getCurrentSession(): Promise<SessionState> {
     }
     throw new Error("인증 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.");
   }
-  return result.data;
+  return readSessionState(result.data);
 }
 
 export async function getServiceHub(): Promise<ApiResult<ServiceHub>> {

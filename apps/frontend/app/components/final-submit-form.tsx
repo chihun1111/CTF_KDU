@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { submitFinalFlags } from "../lib/client-api";
+import { validateSubmissionFlags } from "../lib/submission-validation";
 import { FLAG_IDS, type FinalSubmitResult, type FlagId } from "../lib/types";
+import { FlagResultList } from "./flag-result-list";
 
 type FinalSubmitFormProps = {
   initialResults: Partial<Record<FlagId, { correct: boolean }>>;
@@ -14,7 +16,6 @@ type FinalSubmitFormProps = {
 const flagPrefix = "KDUCTF";
 const flagExampleSuffix = "{...}";
 const flagExample = [flagPrefix, flagExampleSuffix].join("");
-const flagPattern = new RegExp(`^${flagPrefix}\\{[^\\r\\n{}]{1,220}\\}$`);
 
 function initialValues(): Record<FlagId, string> {
   return Object.fromEntries(FLAG_IDS.map((flagId) => [flagId, ""])) as Record<FlagId, string>;
@@ -28,30 +29,16 @@ export function FinalSubmitForm({ initialResults, initialCorrectCount, requiredC
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  function validate(): boolean {
-    const nextErrors: Partial<Record<FlagId, string>> = {};
-    let filledCount = 0;
-    for (const flagId of FLAG_IDS) {
-      const value = values[flagId].trim();
-      if (!value) {
-        continue;
-      }
-      filledCount += 1;
-      if (!flagPattern.test(value)) {
-        nextErrors[flagId] = `${flagExample} 형식의 전체 문자열을 한 줄로 입력합니다.`;
-      }
-    }
-    if (filledCount === 0) {
-      nextErrors["FLAG-01"] = "확인할 플래그를 한 개 이상 입력합니다.";
-    }
-    setFieldErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
-  }
-
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pending) return;
     setMessage(null);
-    if (!validate() || pending) {
+    const nextErrors = validateSubmissionFlags(values);
+    setFieldErrors(nextErrors);
+    const firstInvalid = FLAG_IDS.find((flagId) => nextErrors[flagId] !== undefined);
+    if (firstInvalid) {
+      const field = event.currentTarget.elements.namedItem(`flagsByFlagId.${firstInvalid}`);
+      if (field instanceof HTMLInputElement) field.focus();
       return;
     }
 
@@ -73,7 +60,9 @@ export function FinalSubmitForm({ initialResults, initialCorrectCount, requiredC
       }
 
       if (!response.ok) {
-        setMessage("제출을 처리하지 못했습니다. 입력값을 확인해주세요.");
+        setMessage(response.status >= 500
+          ? "제출 서비스를 사용할 수 없습니다. 입력한 값은 유지됩니다. 잠시 후 다시 시도해주세요."
+          : "제출을 처리하지 못했습니다. 입력값을 확인해주세요.");
         return;
       }
 
@@ -105,6 +94,10 @@ export function FinalSubmitForm({ initialResults, initialCorrectCount, requiredC
             {requiredCount}개 중 {correctCount}개 일치
           </span>
         </div>
+        <section className="submissionResults" aria-label="최근 제출의 번호별 결과" aria-live="polite" aria-atomic="true">
+          <p>입력 칸 순서와 관계없이 확인된 플래그 번호를 표시합니다.</p>
+          <FlagResultList results={displayResults} />
+        </section>
 
         {message ? <p className="formNotice" role="status">{message}</p> : null}
 
@@ -116,20 +109,22 @@ export function FinalSubmitForm({ initialResults, initialCorrectCount, requiredC
               autoCapitalize="none"
               spellCheck={false}
               disabled={pending}
-              maxLength={228}
+              maxLength={512}
               aria-invalid={Boolean(fieldErrors[flagId])}
               aria-describedby={fieldErrors[flagId] ? `${flagId}-error` : undefined}
               name={`flagsByFlagId.${flagId}`}
               placeholder={flagExample}
               value={values[flagId]}
-              onChange={(event) => setValues((current) => ({ ...current, [flagId]: event.target.value }))}
+              onChange={(event) => {
+                setValues((current) => ({ ...current, [flagId]: event.target.value }));
+                setFieldErrors((current) => {
+                  const next = { ...current };
+                  delete next[flagId];
+                  return next;
+                });
+              }}
             />
             {fieldErrors[flagId] ? <small className="fieldError" id={`${flagId}-error`} role="alert">{fieldErrors[flagId]}</small> : null}
-            {displayResults[flagId] ? (
-              <small className={displayResults[flagId]?.correct ? "resultGood" : "resultBad"}>
-                {displayResults[flagId]?.correct ? "일치" : "불일치"}
-              </small>
-            ) : null}
           </label>
         ))}
       </div>

@@ -185,6 +185,21 @@ test("failed certificate views and redirects never cache participant responses",
   const unavailable = await viewCertificate(new NextRequest("http://frontend:3000/clear"));
   assert.equal(unavailable.status, 502);
   assert.match(unavailable.headers.get("cache-control") ?? "", /no-store/);
+  assert.match(await unavailable.text(), /href="\/submit"/);
+});
+
+test("unexpected certificate payloads return a recovery page without consuming a second view", async () => {
+  const upstream = mock.method(globalThis, "fetch", async () => Response.json({}));
+  for (const body of [null, {}, { studentId: "participant", clearReceiptCode: "receipt", message: "완료", clearedAt: "not-a-date" }]) {
+    upstream.mock.mockImplementation(async () => Response.json(body));
+    const before = upstream.mock.callCount();
+    const response = await viewCertificate(new NextRequest("http://frontend:3000/clear"));
+    assert.equal(response.status, 502);
+    assert.match(response.headers.get("content-type") ?? "", /text\/html/);
+    assert.match(response.headers.get("cache-control") ?? "", /no-store/);
+    assert.match(await response.text(), /href="\/submit"/);
+    assert.equal(upstream.mock.callCount(), before + 1);
+  }
 });
 
 test("server API bounds requests, refuses redirects, and does not retry failed mutations", async () => {

@@ -150,8 +150,29 @@ export function buildFlagBackendRequest(input: {
   return { url: url.toString(), headers };
 }
 
-async function fetchCurrentUserFlag(cookieHeader: string | undefined): Promise<string | null> {
-  if (!cookieHeader || !/(?:^|;)\s*ctf_session=[^;\s]+/.test(cookieHeader)) return null;
+/** Match backend cookie decoding before using a session token as a local identity. */
+export function readSessionToken(cookieHeader: string | undefined): string | null {
+  if (!cookieHeader || cookieHeader.length > 16_384) return null;
+  let token: string | null = null;
+  for (const part of cookieHeader.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator < 0 || part.slice(0, separator).trim() !== "ctf_session") continue;
+    if (token !== null) return null;
+    const encoded = part.slice(separator + 1).trim();
+    if (!encoded || encoded.length > 512) return null;
+    try {
+      const decoded = decodeURIComponent(encoded);
+      if (!/^[A-Za-z0-9_-]+$/.test(decoded)) return null;
+      token = decoded;
+    } catch {
+      return null;
+    }
+  }
+  return token;
+}
+
+async function fetchCurrentUserFlag(cookieHeader: string | undefined, signal?: AbortSignal): Promise<string | null> {
+  if (!readSessionToken(cookieHeader)) return null;
   const serviceToken = await readInternalServiceToken();
   if (!serviceToken) throw new UpstreamUnavailableError("Service authentication is unavailable");
 
@@ -163,7 +184,7 @@ async function fetchCurrentUserFlag(cookieHeader: string | undefined): Promise<s
     });
     const response = await fetch(backendRequest.url, {
       headers: backendRequest.headers,
-      signal: AbortSignal.timeout(5_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5_000)]) : AbortSignal.timeout(5_000),
       redirect: "error",
     });
     if (!response.ok) {
@@ -184,7 +205,7 @@ async function fetchCurrentUserFlag(cookieHeader: string | undefined): Promise<s
 // 티켓 서명은 키를 메시지 앞에 붙이는 단순 prefix MAC 구조입니다.
 // (의도적으로 취약한 구조 - 이 문제의 퍼즐은 길이 확장 공격입니다.)
 export function sessionBindingFromCookie(cookieHeader: string | undefined): string | null {
-  const sessionToken = getCookie(cookieHeader, "ctf_session");
+  const sessionToken = readSessionToken(cookieHeader);
   return sessionToken ? createHash("sha256").update(sessionToken).digest("hex") : null;
 }
 
@@ -312,12 +333,9 @@ export function createGrantStore(now: () => number = Date.now, maxEntries = 10_0
   return {
     issue(sessionBinding: string): string {
       pruneExpired();
-      // Rechecking the same ticket replaces the old grant instead of growing memory.
+      // Concurrent checks must not invalidate a redirect already sent to this session.
       const previousToken = sessionTokens.get(sessionBinding);
-      if (previousToken) {
-        const previous = grants.get(previousToken);
-        if (previous) remove(previousToken, previous);
-      }
+      if (previousToken && grants.has(previousToken)) return previousToken;
       if (grants.size >= maxEntries) throw new Error("Access grant capacity exceeded");
       const token = randomBytes(24).toString("hex");
       grants.set(token, {
@@ -489,9 +507,11 @@ function sendPage(
 
 async function resolveVaultKeyAndSession(
   cookieHeader: string | undefined,
+  signal?: AbortSignal,
 ): Promise<{ key: Buffer; flag: string; sessionBinding: string } | null> {
-  const flag = await fetchCurrentUserFlag(cookieHeader);
+  const flag = await fetchCurrentUserFlag(cookieHeader, signal);
   const serviceToken = await readInternalServiceToken();
+  signal?.throwIfAborted();
   const sessionBinding = sessionBindingFromCookie(cookieHeader);
   if (!flag || !serviceToken || !sessionBinding) {
     return null;
@@ -501,7 +521,13 @@ async function resolveVaultKeyAndSession(
 
 export function createChallengeServer(grants = grantStore) {
   return createServer((request, response) => {
-    void handleRequest(request, response, grants).catch((error: unknown) => {
+    const cancellation = new AbortController();
+    const abortDisconnectedRequest = () => {
+      if (!response.writableFinished) cancellation.abort();
+    };
+    request.once("aborted", abortDisconnectedRequest);
+    response.once("close", abortDisconnectedRequest);
+    void handleRequest(request, response, cancellation.signal, grants).catch((error: unknown) => {
       // Do not let a filesystem, upstream, or parsing failure terminate the service.
       if (response.destroyed || response.writableEnded) return;
       if (response.headersSent) {
@@ -513,11 +539,14 @@ export function createChallengeServer(grants = grantStore) {
         "cache-control": "no-store",
       });
       response.end("요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.\n");
+    }).finally(() => {
+      request.off("aborted", abortDisconnectedRequest);
+      response.off("close", abortDisconnectedRequest);
     });
   });
 }
 
-async function handleRequest(request: IncomingMessage, response: ServerResponse, grants = grantStore): Promise<void> {
+async function handleRequest(request: IncomingMessage, response: ServerResponse, signal: AbortSignal, grants = grantStore): Promise<void> {
   let url: URL;
   try {
     url = new URL(request.url ?? "/", "http://localhost");
@@ -546,7 +575,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   }
 
   if (url.pathname === "/") {
-    const context = await resolveVaultKeyAndSession(request.headers.cookie);
+    const context = await resolveVaultKeyAndSession(request.headers.cookie, signal);
     if (!context) {
       response.writeHead(401, {
         "content-type": "text/plain; charset=utf-8",
@@ -573,7 +602,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   }
 
   if (url.pathname === "/check" && request.method === "POST") {
-    const context = await resolveVaultKeyAndSession(request.headers.cookie);
+    const context = await resolveVaultKeyAndSession(request.headers.cookie, signal);
     if (!context) {
       response.writeHead(401, {
         "content-type": "text/plain; charset=utf-8",
@@ -613,7 +642,22 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   }
 
   if (url.pathname === "/prize") {
-    const context = await resolveVaultKeyAndSession(request.headers.cookie);
+    // A speculative load or embedded resource must not spend a one-use grant.
+    // Same-origin fetch remains supported for participants solving the puzzle.
+    const purpose = [request.headers.purpose, request.headers["sec-purpose"]].join(" ");
+    const site = request.headers["sec-fetch-site"];
+    const destination = request.headers["sec-fetch-dest"];
+    if (/\b(?:prefetch|prerender)\b/i.test(purpose)
+      || site === "cross-site" || site === "same-site"
+      || (destination && destination !== "document" && destination !== "empty")) {
+      response.writeHead(403, {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      response.end("페이지를 직접 열어 수령 권한을 확인해 주세요.\n");
+      return;
+    }
+    const context = await resolveVaultKeyAndSession(request.headers.cookie, signal);
     if (!context) {
       response.writeHead(401, {
         "content-type": "text/plain; charset=utf-8",

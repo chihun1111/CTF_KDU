@@ -1,23 +1,8 @@
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
 import { challengeSeedRows } from "@campus-ctf/db";
 
 export type PgQueryable = {
   query: (sql: string, params?: unknown[]) => Promise<unknown> | unknown;
 };
-
-export function resolveInitialMigrationPath(fromDir = import.meta.dirname): string {
-  const migrationPath = path.resolve(fromDir, "../../../../packages/db/drizzle/0000_initial_schema.sql");
-  if (!existsSync(migrationPath)) {
-    throw new Error("Initial database migration SQL was not found");
-  }
-
-  return migrationPath;
-}
-
-export async function runInitialMigration(db: PgQueryable, migrationPath = resolveInitialMigrationPath()): Promise<void> {
-  await db.query(readFileSync(migrationPath, "utf8"));
-}
 
 function challengeIdFromFlagId(flagId: string): string {
   const challengeId = /^FLAG-(\d{2})$/.exec(flagId)?.[1];

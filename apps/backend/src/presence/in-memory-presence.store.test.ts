@@ -20,3 +20,14 @@ test("InMemoryPresenceStore uses documented presence key shape without user or t
   assert.equal(store.activeKeys(now).some((key) => key.includes("user-1")), false);
   assert.equal(store.activeKeys(now).some((key) => key.includes("opaque-token")), false);
 });
+
+test("fallback presence removes expired sessions permanently and bounds retained sessions", async () => {
+  const store = new InMemoryPresenceStore(2);
+  const now = new Date("2026-05-10T00:00:00.000Z");
+  await store.markSessionOnline("expired", 1, now);
+  await store.markSessionOnline("active", 90, now);
+  await store.markSessionOnline("new", 90, new Date(now.getTime() + 2_000));
+  assert.deepEqual(store.activeKeys(now), ["presence:session:active", "presence:session:new"]);
+  await store.markSessionOnline("third", 90, new Date(now.getTime() + 3_000));
+  assert.equal(store.activeKeys(now).length, 2);
+});

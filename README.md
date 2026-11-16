@@ -92,7 +92,8 @@ KDU 교내 CTF는 실제 교내 서비스와 유사한 화면에서 웹 보안 �
 최종 제출의 트랜잭션, 문제 서비스의 사용자 격리·실행 제한, 관리자 목록과 클리어 인증,
 의존성과 Docker 빌드를 보강했습니다.
 
-- [보강 내역과 검증 결과](docs/review-2026-11-16.md)
+- [1차 보강 내역과 검증 결과](docs/review-2026-11-16.md)
+- [후속 보강 내역과 장애·동시성 검증](docs/review-followup-2026-11-16.md)
 - [설치·운영·백업·secret 교체 가이드](docs/operations.md)
 - [자동 테스트·빌드 워크플로](.github/workflows/ci.yml)
 - [Docker 전체 흐름 검증 워크플로](.github/workflows/runtime.yml)

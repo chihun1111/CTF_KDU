@@ -25,3 +25,8 @@ test("PresenceHeartbeatService stores a TTL marker by internal session id only",
   assert.equal(JSON.stringify(result).includes("user-1"), false);
   assert.equal(JSON.stringify(events).includes("opaque-token"), false);
 });
+
+test("a cache outage does not fail an already authenticated heartbeat", async () => {
+  const service = new PresenceHeartbeatService({ markSessionOnline: async () => { throw new Error("Redis down"); } });
+  assert.deepEqual(await service.heartbeat({ sessionId: "s", userId: "u", role: "participant" }), { ok: true });
+});
