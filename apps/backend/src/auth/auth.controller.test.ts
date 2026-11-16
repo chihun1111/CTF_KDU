@@ -57,7 +57,7 @@ test("AuthController register sets cookie and no-store while returning only ok b
   const body = await controller.register(
     {
       studentId: "2622022",
-      password: "valid-password",
+      password: "ValidPassword8",
       consent: {
         consentVersion: "2026-ctf-v1",
         requiredLoggingAccepted: true,
@@ -124,7 +124,7 @@ test("AuthController login sets cookie and no-store while returning only ok body
   const body = await controller.login(
     {
       studentId: "2622022",
-      password: "valid-password",
+      password: "ValidPassword8",
     },
     {
       setHeader(name: string, value: string) {

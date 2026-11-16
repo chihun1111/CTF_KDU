@@ -75,13 +75,13 @@ jobs:
           retention-days: 7
       - name: Verify participant flow
         if: ${{ !cancelled() && steps.start.outcome == 'success' }}
-        run: pnpm smoke:runtime --base-url http://localhost:8080
+        run: pnpm smoke:runtime --base-url http://localhost:8080 --strict-boundaries
       - name: Verify eight challenges and participant isolation
         if: ${{ !cancelled() && steps.start.outcome == 'success' }}
         run: pnpm smoke:challenges --base-url http://localhost:8080
       - name: Verify administrator flow
         if: ${{ !cancelled() && steps.start.outcome == 'success' }}
-        run: pnpm smoke:admin --base-url http://localhost:8080
+        run: pnpm smoke:admin --base-url http://localhost:8080 --strict-fixtures
       - name: Verify one-time certificate flow
         if: ${{ !cancelled() && steps.start.outcome == 'success' }}
         run: pnpm smoke:clear --base-url http://localhost:8080

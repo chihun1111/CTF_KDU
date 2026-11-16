@@ -79,6 +79,28 @@ test("challenge-08 guest ticket verifies with role guest and rejects tampering",
   assert.equal(verifyTicket(key, tampered), null);
 });
 
+test("challenge-08 rejects malformed signature encodings instead of silently truncating them", () => {
+  const key = deriveVaultKey("internal-token", "session-a");
+  const ticket = encodeTicketValue(key, buildGuestPayload(1000));
+  const separator = ticket.lastIndexOf(".");
+  const encodedPayload = ticket.slice(0, separator);
+  const signature = ticket.slice(separator + 1);
+
+  for (const malformed of [
+    `${signature}not-hex`,
+    `${signature}a`,
+    `${signature}00`,
+    `${signature} `,
+    `${signature}\n`,
+    `${signature}\r\n`,
+    signature.slice(0, -1),
+    `g${signature.slice(1)}`,
+  ]) {
+    assert.equal(verifyTicket(key, `${encodedPayload}.${malformed}`), null);
+  }
+  assert(verifyTicket(key, `${encodedPayload}.${signature.toUpperCase()}`), "hexadecimal case does not change the digest bytes");
+});
+
 test("challenge-08 claims parser takes the last duplicate key like naive frameworks", () => {
   const claims = readClaims("visit=1&holder=guest&role=guest&holder=admin&role=winner");
 

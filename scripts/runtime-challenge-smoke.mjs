@@ -52,9 +52,9 @@ export function parseArgs(argv) {
   const options = {
     baseUrl: "http://localhost",
     studentAId: null,
-    studentAPassword: `ChallengeSmokeA-${Date.now()}-password`,
+    studentAPassword: `ChallengeSmokeA${Date.now()}Password`,
     studentBId: null,
-    studentBPassword: `ChallengeSmokeB-${Date.now()}-password`,
+    studentBPassword: `ChallengeSmokeB${Date.now()}Password`,
     // Kept as accepted, unused compatibility options. This smoke no longer reads
     // runtime secrets or the database to discover participant flag values.
     composeFile: null,

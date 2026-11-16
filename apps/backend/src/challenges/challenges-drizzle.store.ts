@@ -55,7 +55,7 @@ export class ChallengesDrizzleStore implements ChallengesStore {
       })
       .from(finalSubmissions)
       .where(eq(finalSubmissions.userId, userId))
-      .orderBy(desc(finalSubmissions.createdAt))
+      .orderBy(desc(finalSubmissions.createdAt), desc(finalSubmissions.id))
       .limit(1);
 
     const [latest] = submissions as Array<{ id?: unknown; correctCount?: unknown; isClear?: unknown }>;

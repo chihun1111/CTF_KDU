@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { requestNavigation } from "./runtime-navigation.mjs";
+import { verifyParticipantBoundaries } from "./runtime-boundary-checks.mjs";
 
 const FINAL_FLAG_IDS = ["FLAG-01", "FLAG-02", "FLAG-03", "FLAG-04", "FLAG-05", "FLAG-06", "FLAG-07", "FLAG-08"];
 
@@ -40,16 +41,18 @@ const CHECKLIST = {
   disabledEndpoints: ["/api/services/it-center-status/artifact"],
   optionalClearFlow: "--flags-file",
   optionalAdminFlow: "--admin-cookie",
+  optionalBoundaryFlow: "--strict-boundaries",
 };
 
 function parseArgs(argv) {
   const options = {
     baseUrl: "http://localhost",
     studentId: null,
-    password: `Smoke-${Date.now()}-password`,
+    password: `Smoke${Date.now()}Password`,
     flagsFile: null,
     adminCookie: null,
     printChecklist: false,
+    strictBoundaries: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -83,6 +86,10 @@ function parseArgs(argv) {
     }
     if (arg === "--print-checklist") {
       options.printChecklist = true;
+      continue;
+    }
+    if (arg === "--strict-boundaries") {
+      options.strictBoundaries = true;
       continue;
     }
     throw new Error(`Unknown argument: ${arg}`);
@@ -394,7 +401,7 @@ async function main() {
       const response = await request(options, "/api/admin/operations/online-count", { cookie: options.adminCookie });
       assert(response.status === 200, `/api/admin/operations/online-count returned ${response.status} for admin`);
       const body = await readJson(response);
-      assert(typeof body.activeSessionCount === "number", "online count response lacks activeSessionCount");
+      assert(Number.isInteger(body.onlineSessionCount), "online count response lacks onlineSessionCount");
     });
   }
 
@@ -419,6 +426,18 @@ async function main() {
       cookie = mergeCookies(cookie, first);
       const second = await request(options, "/clear", { cookie });
       assert([302, 303, 307, 308].includes(second.status), `/clear second render returned ${second.status}`);
+    });
+  }
+
+  if (options.strictBoundaries) {
+    await step("strict public-proxy authorization, input and revocation boundaries", async () => {
+      await verifyParticipantBoundaries({
+        request: (path, init) => request(options, path, init),
+        baseUrl: options.baseUrl,
+        cookie,
+        studentId: options.studentId,
+        services: publicServices,
+      });
     });
   }
 

@@ -37,7 +37,7 @@ async function healthMatches(predicate) {
 }
 
 const studentId = String(randomInt(9_000_000, 9_999_999));
-const password = "Resilience-" + randomUUID();
+const password = "Resilience" + randomUUID().replaceAll("-", "");
 const register = await request("/api/auth/register", {
   method: "POST", headers: { "content-type": "application/json" },
   body: JSON.stringify({ studentId, password, consent: { consentVersion: "ci-resilience", requiredLoggingAccepted: true, analyticsLoggingAccepted: false, cookieAccepted: true } }),

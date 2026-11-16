@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { consentVersion, loginFormSchema, registerFormSchema } from "../lib/auth-validation";
+import { consentVersion, loginFormSchema, passwordInputMaxLength, registerFormSchema } from "../lib/auth-validation";
 import { authenticatedDestination, loginParticipant, registerParticipant, SessionCookieUnavailableError } from "../lib/client-api";
 
 type Mode = "login" | "register";
@@ -137,15 +137,16 @@ export function AuthForm({ mode }: AuthFormProps) {
           autoComplete={isRegister ? "new-password" : "current-password"}
           aria-describedby="password-help"
           disabled={pending}
-          maxLength={256}
+          maxLength={passwordInputMaxLength}
           minLength={8}
           name="password"
+          pattern="[A-Za-z0-9]{8,128}"
           type="password"
           required
           value={password}
           onChange={(event) => setPassword(event.target.value)}
         />
-        <small id="password-help">8자 이상 128자 이하로 입력합니다.</small>
+        <small id="password-help">영문 대소문자와 숫자만 사용해 8자 이상 128자 이하로 입력합니다. 공백, 특수문자, 이모지는 사용할 수 없습니다.</small>
       </label>
 
       {isRegister ? (

@@ -82,7 +82,7 @@ test("AuthRegistrationService creates user, consent, 8 flags, and session withou
   const result = await service.register({
     input: {
       studentId: "2622022",
-      password: "valid-password",
+      password: "ValidPassword8",
       consent: {
         consentVersion: "2026-ctf-v1",
         requiredLoggingAccepted: true,
@@ -120,7 +120,7 @@ test("registration cannot create an unusable account when challenge metadata has
     { buildSessionCookie: () => { throw new Error("must not create a session"); } },
   );
   await assert.rejects(() => service.register({
-    input: { studentId: "2622022", password: "valid-password", consent: { consentVersion: "v1", requiredLoggingAccepted: true, cookieAccepted: true } },
+    input: { studentId: "2622022", password: "ValidPassword8", consent: { consentVersion: "v1", requiredLoggingAccepted: true, cookieAccepted: true } },
     ipHash: "ip",
     userAgentHash: "ua",
   }), ServiceUnavailableException);
@@ -147,7 +147,7 @@ test("AuthRegistrationService rejects duplicate student id without creating down
       service.register({
         input: {
           studentId: "2622022",
-          password: "valid-password",
+          password: "ValidPassword8",
           consent: {
             consentVersion: "2026-ctf-v1",
             requiredLoggingAccepted: true,

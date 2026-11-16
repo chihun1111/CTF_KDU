@@ -32,7 +32,7 @@ test("AuthLoginService creates a new session and returns token only as cookie", 
 
   const result = await service.login({
     studentId: "2622022",
-    password: "valid-password",
+    password: "ValidPassword8",
   });
 
   assert.deepEqual(result.body, { ok: true });
@@ -65,11 +65,11 @@ test("AuthLoginService uses the same generic failure for unknown student id and 
     { buildSessionCookie: (token) => `ctf_session=${token}` },
   );
 
-  await assert.rejects(() => missingUserService.login({ studentId: "2622022", password: "valid-password" }), {
+  await assert.rejects(() => missingUserService.login({ studentId: "2622022", password: "ValidPassword8" }), {
     constructor: UnauthorizedException,
     message: "Login failed",
   });
-  await assert.rejects(() => badPasswordService.login({ studentId: "2622022", password: "wrong-password" }), {
+  await assert.rejects(() => badPasswordService.login({ studentId: "2622022", password: "WrongPassword8" }), {
     constructor: UnauthorizedException,
     message: "Login failed",
   });

@@ -20,11 +20,14 @@ export class ConsentDto {
 }
 
 export class LoginRequestDto {
-  @Matches(/^\d{7}$/, { message: "studentId must be exactly 7 digits" })
+  @Matches(/^\d{7}(?![\s\S])/, { message: "studentId must be exactly 7 digits" })
   studentId!: string;
 
   @IsString()
   @Length(8, 128, { message: "password must be 8 to 128 characters" })
+  // Use an absolute end check: JavaScript's $ also matches before a final LF.
+  // Validate the exact supplied value; never trim or remove rejected characters.
+  @Matches(/^[A-Za-z0-9]{8,128}(?![\s\S])/, { message: "password must contain only ASCII letters and digits" })
   password!: string;
 }
 

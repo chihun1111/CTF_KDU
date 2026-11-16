@@ -17,7 +17,7 @@ export function parseArgs(argv) {
   const options = {
     baseUrl: "http://localhost",
     studentId: null,
-    password: `ClearSmoke-${Date.now()}-password`,
+    password: `ClearSmoke${Date.now()}Password`,
     composeFile: "infra/docker/docker-compose.yml",
     envFile: ".env.production",
     runtimeSecretsDir: process.env.RUNTIME_SECRETS_DIR ?? "secrets/runtime-only",
@@ -266,15 +266,28 @@ async function main() {
     assert(JSON.stringify(audits).includes(options.studentId) === false, "FINAL_SUBMIT audit includes plaintext student id");
   });
 
-  await step("clear page consumes the one-time cookie once", async () => {
-    const first = await request(options, "/clear", { cookie });
-    assert(first.status === 200, `/clear first render returned ${first.status}`);
-    const firstBody = await first.text();
-    assert(firstBody.includes(options.studentId), "/clear did not render the clear certificate student id");
-    cookie = mergeCookies(cookie, first);
-    const second = await request(options, "/clear", { cookie });
-    assert([302, 303, 307, 308].includes(second.status), `/clear second render returned ${second.status}`);
-    assert((second.headers.get("location") ?? "").includes("/submit"), "clear page did not redirect to submit after consume");
+  await step("concurrent certificate requests consume the one-time cookie exactly once", async () => {
+    const responses = await Promise.all([
+      request(options, "/clear", { cookie }),
+      request(options, "/clear", { cookie }),
+    ]);
+    assert(responses.filter((response) => response.status === 200).length === 1, "concurrent clear requests must have exactly one successful certificate");
+    for (const response of responses) {
+      const body = await response.text();
+      assert(/no-store/.test(response.headers.get("cache-control") ?? ""), "clear response must not be cached");
+      if (response.status === 200) {
+        assert(body.includes(options.studentId), "/clear did not render the current participant certificate");
+      } else {
+        assert([302, 303, 307, 308].includes(response.status), "concurrent clear loser must redirect");
+        assert(new URL(response.headers.get("location"), options.baseUrl).pathname === "/submit", "clear loser did not return to submit");
+        assert(!body.includes(options.studentId), "clear loser exposed the certificate identity");
+      }
+    }
+    // Replay the original token, not a browser cookie jar already cleared by Set-Cookie.
+    const replay = await request(options, "/clear", { cookie });
+    assert([302, 303, 307, 308].includes(replay.status), `/clear replay returned ${replay.status}`);
+    assert(new URL(replay.headers.get("location"), options.baseUrl).pathname === "/submit", "clear replay did not return to submit");
+    assert(!(await replay.text()).includes(options.studentId), "clear replay exposed the certificate identity");
   });
 
   console.log(`[runtime-clear-smoke] completed clear-flow checks against ${options.baseUrl}`);

@@ -329,7 +329,7 @@ export class AdminOperationsDrizzleStore implements AdminOperationsStore {
         id: string;
         userId: string | null;
         action: string;
-        metadata: Record<string, unknown>;
+        metadata: unknown;
         createdAt: Date;
       }>).map((row) => ({
         id: row.id,

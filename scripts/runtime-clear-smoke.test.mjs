@@ -13,14 +13,14 @@ test("runtime-clear-smoke accepts documented pnpm delimiter and clear options", 
     "--student-id",
     "9101234",
     "--password",
-    "ClearSmoke-password",
+    "ClearSmokePassword123",
     "--runtime-secrets-dir",
     "/tmp/runtime-secrets",
   ]);
 
   assert.equal(options.baseUrl, "http://127.0.0.1");
   assert.equal(options.studentId, "9101234");
-  assert.equal(options.password, "ClearSmoke-password");
+  assert.equal(options.password, "ClearSmokePassword123");
   assert.equal(options.runtimeSecretsDir, "/tmp/runtime-secrets");
 });
 

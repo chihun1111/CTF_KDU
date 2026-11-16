@@ -8,6 +8,7 @@ import { hmacLookupHash } from "../packages/config/dist/index.js";
 import {
   assertNoSensitiveMaterial,
   buildAdminRoleUpdateQuery,
+  buildStrictFixtureQuery,
   buildUserIdQuery,
   parseArgs,
   readFirstPsqlValue,
@@ -33,29 +34,100 @@ test("runtime-admin-smoke accepts documented pnpm delimiter and admin options", 
     "--admin-student-id",
     "9201234",
     "--admin-password",
-    "AdminSmoke-password",
+    "AdminSmokePassword8",
     "--participant-student-id",
     "9211234",
     "--participant-password",
-    "ParticipantSmoke-password",
+    "ParticipantSmokePassword8",
     "--runtime-secrets-dir",
     "/tmp/runtime-secrets",
   ]);
 
   assert.equal(options.baseUrl, "http://127.0.0.1");
   assert.equal(options.adminStudentId, "9201234");
-  assert.equal(options.adminPassword, "AdminSmoke-password");
+  assert.equal(options.adminPassword, "AdminSmokePassword8");
   assert.equal(options.participantStudentId, "9211234");
-  assert.equal(options.participantPassword, "ParticipantSmoke-password");
+  assert.equal(options.participantPassword, "ParticipantSmokePassword8");
   assert.equal(options.runtimeSecretsDir, "/tmp/runtime-secrets");
+  assert.equal(options.strictFixtures, false);
+});
+
+test("strict admin fixtures are opt-in and require an isolated CI project with a loopback origin", () => {
+  const isolated = { CI: "true", COMPOSE_PROJECT_NAME: "ctf-ci-123456" };
+  for (const baseUrl of ["http://localhost:8080", "http://127.0.0.1:8080", "http://[::1]:8080"]) {
+    assert.equal(parseArgs(["--strict-fixtures", "--base-url", baseUrl], isolated).strictFixtures, true);
+  }
+  assert.equal(parseArgs([], {}).strictFixtures, false);
+  for (const env of [{}, { CI: "false", COMPOSE_PROJECT_NAME: "ctf-ci-123" }, { CI: "true" },
+    { CI: "true", COMPOSE_PROJECT_NAME: "ctf-production" }, { CI: "true", COMPOSE_PROJECT_NAME: "ctf-ci-staging" }]) {
+    assert.throws(() => parseArgs(["--strict-fixtures"], env), /isolated ctf-ci/);
+  }
+  for (const baseUrl of ["https://example.invalid", "http://localhost.evil", "http://localhost@elsewhere.invalid", "ftp://localhost",
+    "http://localhost/production", "http://localhost?target=production", "http://localhost#production", "http://user:pass@localhost"]) {
+    assert.throws(() => parseArgs(["--strict-fixtures", "--base-url", baseUrl], isolated), /loopback HTTP/);
+  }
+});
+
+test("unsafe strict fixture CLI exits before HTTP or Docker mutations", () => {
+  const guard = `
+    import childProcess from 'node:child_process';
+    import { syncBuiltinESMExports } from 'node:module';
+    globalThis.fetch = () => { throw new Error('HTTP_MUTATION_ATTEMPTED'); };
+    childProcess.spawnSync = () => { throw new Error('DOCKER_MUTATION_ATTEMPTED'); };
+    syncBuiltinESMExports();
+  `;
+  assert.throws(() => execFileSync(process.execPath, [
+    "--import", `data:text/javascript;base64,${Buffer.from(guard).toString("base64")}`,
+    "scripts/runtime-admin-smoke.mjs", "--strict-fixtures",
+  ], {
+    encoding: "utf8", timeout: 5_000, env: { ...process.env, CI: "false", COMPOSE_PROJECT_NAME: "ctf-production" },
+    stdio: ["ignore", "pipe", "pipe"],
+  }), (error) => {
+    assert.match(error.stderr, /Strict admin fixtures require CI=true/);
+    assert.doesNotMatch(error.stderr, /MUTATION_ATTEMPTED/);
+    return true;
+  });
+});
+
+test("strict fixture SQL accepts only constrained unique UUIDs and one fresh participant", () => {
+  const participant = "00000000-0000-4000-8000-000000000001";
+  const fixtures = {
+    auditIds: [2, 3, 4, 5].map((suffix) => `00000000-0000-4000-8000-${String(suffix).padStart(12, "0")}`),
+    submissionIds: [7, 6].map((suffix) => `00000000-0000-4000-8000-${String(suffix).padStart(12, "0")}`),
+  };
+  const query = buildStrictFixtureQuery(participant, fixtures);
+  assert.match(query, /role = 'participant'/);
+  assert.match(query, /NOT EXISTS \(SELECT 1 FROM final_submissions/);
+  assert.match(query, /NULL::jsonb/);
+  assert.match(query, /'__proto__'/);
+  assert.match(query, /statement_timestamp\(\)/);
+  assert.match(query, /000000000006', 1\), \('00000000-0000-4000-8000-000000000007', 2/);
+  assert.throws(() => buildStrictFixtureQuery("'; DROP TABLE users; --", fixtures), /identifiers are invalid/);
+  assert.throws(() => buildStrictFixtureQuery(participant, { ...fixtures, auditIds: ["bad", ...fixtures.auditIds.slice(1)] }), /identifiers are invalid/);
+  assert.throws(() => buildStrictFixtureQuery(participant, { ...fixtures, submissionIds: [fixtures.auditIds[0], fixtures.auditIds[0]] }), /identifiers are invalid/);
 });
 
 test("runtime-admin-smoke rejects invalid or overlapping student ids", () => {
   assert.throws(() => parseArgs(["--admin-student-id", "not-valid"]), /admin-student-id/);
+  assert.throws(() => parseArgs(["--admin-student-id", "9201234\n"]), /admin-student-id/);
   assert.throws(
     () => parseArgs(["--admin-student-id", "9201234", "--participant-student-id", "9201234"]),
     /must be different/,
   );
+});
+
+test("admin smoke generates and validates only ASCII alphanumeric passwords", () => {
+  const generated = parseArgs([]);
+  assert.match(generated.adminPassword, /^[A-Za-z0-9]{8,128}(?![\s\S])/);
+  assert.match(generated.participantPassword, /^[A-Za-z0-9]{8,128}(?![\s\S])/);
+  for (const option of ["--admin-password", "--participant-password"]) {
+    for (const password of ["short", "a".repeat(129), "Password8!", "Password8\0", "Password8\n", "Password8\r\n", " Password8", "Password8 ", "😀".repeat(8)]) {
+      assert.throws(() => parseArgs([option, password]), /password must be 8 to 128 ASCII/);
+    }
+    for (const password of ["abcdefgh", "12345678", "A".repeat(128)]) {
+      assert.doesNotThrow(() => parseArgs([option, password]));
+    }
+  }
 });
 
 test("runtime-admin-smoke builds constrained user lookup and admin update queries", () => {
@@ -78,9 +150,9 @@ test("runtime-admin-smoke reads the first psql value before command tags", () =>
 test("runtime-admin-smoke allows pseudonymous references but rejects student ids and other sensitive material", () => {
   const options = {
     adminStudentId: "9201234",
-    adminPassword: "AdminSmoke-password",
+    adminPassword: "AdminSmokePassword8",
     participantStudentId: "9211234",
-    participantPassword: "ParticipantSmoke-password",
+    participantPassword: "ParticipantSmokePassword8",
   };
   assert.doesNotThrow(
     () => assertNoSensitiveMaterial('{"onlineSessionCount":1,"participantRef":"participant:abc","actorRef":null}', options),

@@ -1,6 +1,7 @@
 import { hmacLookupHash } from "../packages/config/dist/index.js";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 function assert(condition, message) {
@@ -13,21 +14,26 @@ function randomStudentId(base) {
   return String(base + Math.floor(Math.random() * 79_999)).slice(0, 7);
 }
 
-export function parseArgs(argv) {
+export function parseArgs(argv, env = process.env) {
   const options = {
     baseUrl: "http://localhost",
     adminStudentId: null,
-    adminPassword: `AdminSmoke-${Date.now()}-password`,
+    adminPassword: `AdminSmoke${Date.now()}Password`,
     participantStudentId: null,
-    participantPassword: `ParticipantSmoke-${Date.now()}-password`,
+    participantPassword: `ParticipantSmoke${Date.now()}Password`,
     composeFile: "infra/docker/docker-compose.yml",
     envFile: ".env.production",
-    runtimeSecretsDir: process.env.RUNTIME_SECRETS_DIR ?? "secrets/runtime-only",
+    runtimeSecretsDir: env.RUNTIME_SECRETS_DIR ?? "secrets/runtime-only",
+    strictFixtures: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--") {
+      continue;
+    }
+    if (arg === "--strict-fixtures") {
+      options.strictFixtures = true;
       continue;
     }
     if (arg === "--base-url") {
@@ -76,9 +82,21 @@ export function parseArgs(argv) {
   options.baseUrl = options.baseUrl.replace(/\/+$/, "");
   options.adminStudentId ??= randomStudentId(9200000);
   options.participantStudentId ??= randomStudentId(9300000);
-  assert(/^\d{7}$/.test(options.adminStudentId), "--admin-student-id must be exactly 7 digits");
-  assert(/^\d{7}$/.test(options.participantStudentId), "--participant-student-id must be exactly 7 digits");
+  assert(/^\d{7}(?![\s\S])/.test(options.adminStudentId), "--admin-student-id must be exactly 7 digits");
+  assert(/^\d{7}(?![\s\S])/.test(options.participantStudentId), "--participant-student-id must be exactly 7 digits");
   assert(options.adminStudentId !== options.participantStudentId, "admin and participant student ids must be different");
+  for (const [name, password] of [["admin", options.adminPassword], ["participant", options.participantPassword]]) {
+    assert(typeof password === "string" && /^[A-Za-z0-9]{8,128}(?![\s\S])/.test(password),
+      `--${name}-password must be 8 to 128 ASCII letters or digits`);
+  }
+  if (options.strictFixtures) {
+    assert(env.CI === "true" && /^ctf-ci-\d+$/.test(env.COMPOSE_PROJECT_NAME ?? ""),
+      "Strict admin fixtures require CI=true and an isolated ctf-ci-<digits> Compose project");
+    const url = new URL(options.baseUrl);
+    assert(["http:", "https:"].includes(url.protocol) && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) &&
+      !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash,
+    "Strict admin fixtures require a loopback HTTP(S) origin");
+  }
   return options;
 }
 
@@ -98,6 +116,49 @@ export function buildUserIdQuery(studentIdHash) {
 export function buildAdminRoleUpdateQuery(studentIdHash) {
   assertStudentHash(studentIdHash);
   return `update users set role = 'admin' where student_id_hash = '${studentIdHash}' returning id`;
+}
+
+export function buildStrictFixtureQuery(participantUserId, fixtures) {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  assert(uuid.test(participantUserId) && fixtures.auditIds?.length === 4 && fixtures.submissionIds?.length === 2,
+    "Strict admin fixture identifiers are invalid");
+  const allIds = [...fixtures.auditIds, ...fixtures.submissionIds];
+  assert(allIds.every((id) => typeof id === "string" && uuid.test(id)) && new Set(allIds).size === allIds.length,
+    "Strict admin fixture identifiers are invalid");
+  const [firstSubmissionId, latestSubmissionId] = [...fixtures.submissionIds].sort();
+  // One data-modifying CTE statement is atomic. Never seed into a participant
+  // who already submitted, even if this helper is invoked with the wrong ID.
+  return `
+WITH eligible AS (
+  SELECT id FROM users WHERE id = '${participantUserId}' AND role = 'participant'
+    AND NOT EXISTS (SELECT 1 FROM final_submissions WHERE user_id = '${participantUserId}')
+), inserted_audits AS (
+  INSERT INTO audit_logs (id, user_id, action, metadata)
+  SELECT fixture.id::uuid, eligible.id, fixture.action, fixture.metadata
+  FROM eligible CROSS JOIN (VALUES
+    ('${fixtures.auditIds[0]}', 'ADMIN_AUDIT_LOGS_VIEWED', NULL::jsonb),
+    ('${fixtures.auditIds[1]}', 'ADMIN_AUDIT_LOGS_VIEWED', '"legacy"'::jsonb),
+    ('${fixtures.auditIds[2]}', '__proto__', '{"page":1,"reason":"strict-fixture-hidden"}'::jsonb),
+    ('${fixtures.auditIds[3]}', 'STRICT_UNKNOWN_ACTION', '{"reason":"strict-fixture-hidden"}'::jsonb)
+  ) AS fixture(id, action, metadata)
+  RETURNING id
+), inserted_submissions AS (
+  INSERT INTO final_submissions (id, user_id, submitted_hash_bundle, correct_count, is_clear, created_at)
+  SELECT fixture.id::uuid, eligible.id, '{}'::jsonb, fixture.correct_count, false, statement_timestamp()
+  FROM eligible CROSS JOIN (VALUES ('${firstSubmissionId}', 1), ('${latestSubmissionId}', 2)) AS fixture(id, correct_count)
+  RETURNING id, user_id
+), inserted_results AS (
+  INSERT INTO final_submission_results (final_submission_id, user_id, flag_id, challenge_id, submitted_flag_hash, is_correct)
+  SELECT submission.id, submission.user_id, fixture.flag_id, challenge.id, 'strict-fixture-hash', true
+  FROM inserted_submissions AS submission
+  JOIN (VALUES ('${firstSubmissionId}', 'FLAG-01'), ('${latestSubmissionId}', 'FLAG-01'), ('${latestSubmissionId}', 'FLAG-02')) AS fixture(id, flag_id)
+    ON submission.id = fixture.id::uuid
+  JOIN challenges AS challenge ON challenge.flag_id = fixture.flag_id
+  RETURNING id
+)
+SELECT jsonb_build_object('auditCount', (SELECT count(*) FROM inserted_audits),
+  'submissionCount', (SELECT count(*) FROM inserted_submissions), 'resultCount', (SELECT count(*) FROM inserted_results))::text;
+`;
 }
 
 function getSetCookies(headers) {
@@ -191,7 +252,7 @@ function runPsqlQuery(options, query) {
       "postgres",
       "sh",
       "-c",
-      'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -c "$1"',
+      'exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -c "$1"',
       "psql-query",
       query,
     ],
@@ -348,6 +409,43 @@ const ADMIN_ENDPOINTS = [
   },
 ];
 
+async function verifyStrictFixtures(options, participantUserId, participantCookie, adminCookie) {
+  const fixtures = {
+    auditIds: Array.from({ length: 4 }, () => randomUUID()),
+    submissionIds: Array.from({ length: 2 }, () => randomUUID()).sort(),
+  };
+  const inserted = JSON.parse(runPsqlQuery(options, buildStrictFixtureQuery(participantUserId, fixtures)));
+  assert(inserted.auditCount === 4 && inserted.submissionCount === 2 && inserted.resultCount === 3,
+    "Strict admin fixtures require a fresh participant and seeded challenges");
+
+  await expectAdminJson(options, adminCookie, "/api/admin/audit-logs", (body) => {
+    const rows = body.items?.filter((row) => fixtures.auditIds.includes(row.id));
+    assert(rows?.length === 4, "Strict audit fixtures were not visible in the latest audit page");
+    assert(rows.every((row) => JSON.stringify(row.metadata) === "{}"), "Strict audit fixtures exposed unapproved metadata");
+  });
+
+  const response = await request(options, "/api/progress", { cookie: participantCookie });
+  assert(response.status === 200, "Participant progress failed for tied submissions");
+  const progress = await readJson(response);
+  assertNoSensitiveMaterial(progress.text, options);
+  assert(progress.body.correctCount === 2 && progress.body.requiredCount === 8 && progress.body.cleared === false,
+    "Participant progress selected the wrong tied submission");
+  assert(JSON.stringify(Object.keys(progress.body.resultsByFlagId ?? {}).sort()) === JSON.stringify(["FLAG-01", "FLAG-02"]) &&
+    progress.body.resultsByFlagId["FLAG-01"]?.correct === true && progress.body.resultsByFlagId["FLAG-02"]?.correct === true,
+  "Participant progress returned results from a different submission");
+  const participantRef = `participant:${createHash("sha256").update(participantUserId).digest("hex").slice(0, 12)}`;
+  await expectAdminJson(options, adminCookie, "/api/admin/participants", (body) => {
+    const participant = body.items?.find((row) => row.participantRef === participantRef);
+    assert(participant?.latestCorrectCount === progress.body.correctCount && participant.finalSubmissionCount === 2,
+      "Admin and participant views disagree about the latest tied submission");
+  });
+  const otherResponse = await request(options, "/api/progress", { cookie: adminCookie });
+  assert(otherResponse.status === 200, "Separate account progress could not be checked");
+  const otherProgress = await readJson(otherResponse);
+  assert(otherProgress.body.correctCount === 0 && Object.keys(otherProgress.body.resultsByFlagId ?? {}).length === 0,
+    "Strict progress fixture crossed participant boundaries");
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
 
@@ -373,6 +471,12 @@ async function main() {
     assert(/^[0-9a-f-]{16,}$/i.test(participantUserId), "participant user id lookup failed");
     assert(/^[0-9a-f-]{16,}$/i.test(adminUserId), "admin role update did not return a user id");
   });
+
+  if (options.strictFixtures) {
+    await step("strict PostgreSQL fixtures preserve audit availability and deterministic participant progress", async () => {
+      await verifyStrictFixtures(options, participantUserId, participantCookie, adminCookie);
+    });
+  }
 
   await step("admin role is resolved from the session cookie", async () => {
     const response = await request(options, "/api/auth/me", { cookie: adminCookie });
