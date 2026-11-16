@@ -158,7 +158,10 @@ CI는 입력값·정답 패널·인증 식별값을 가린 스크린샷과 수�
 trace는 업로드하지 않습니다. 새 경로의 직접 진입·문제 간 연결·기존 URL 호환 검사는
 [참가 동선 문서](participant-navigation.md)의 검증 범위에 따라 확인합니다.
 이전 관찰 결과는 [참가자 관점 보고서](playability-review-2026-11-16.md)에 보존합니다.
-새 변경의 통과 여부는 해당 커밋의 CI 실행 결과로 확인하세요.
+모바일 화면 보정까지 포함한 구현 `3be2e70`은
+[CI #43851206360](https://github.com/chihun1111/CTF_KDU/actions/runs/43851206360)와
+[Runtime #43851206356](https://github.com/chihun1111/CTF_KDU/actions/runs/43851206356)를 통과했습니다. 대상 커밋의 증거와 검증 한계는
+[참가 동선 문서](participant-navigation.md#검증-범위와-상태)에서 확인하세요.
 
 ### 장애 및 migration 회귀 검증
 
