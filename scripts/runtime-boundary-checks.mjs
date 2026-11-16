@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 
+const PERSONAL_RESOURCE_SUFFIX = {
+  "01": "", "02": "api/debug", "03": "view?id=4", "04": "assets/app.js",
+  "05": "assets/main.js", "06": "assets/main.js.map", "07": "search?q=", "08": "",
+};
+
 /** Exercise the public proxy using only the smoke run's disposable participant. */
 export async function verifyParticipantBoundaries({ request, baseUrl, cookie, studentId, services }) {
   const origin = new URL(baseUrl).origin;
@@ -27,7 +32,13 @@ export async function verifyParticipantBoundaries({ request, baseUrl, cookie, st
     await check(path, { headers: forgedHeaders }, [401], "forged identity without session", true);
   }
   for (const service of services) {
-    await check(service.serviceHref, { headers: forgedHeaders }, [401], `anonymous challenge ${service.id}`, true);
+    // The status service deliberately exposes a nonpersonal landing/robots/script.
+    // Authentication must protect the personal data, not hide its public clues.
+    if (service.id === "02") {
+      await check(service.serviceHref, { headers: forgedHeaders }, [200], "public status landing");
+    }
+    assert(Object.hasOwn(PERSONAL_RESOURCE_SUFFIX, service.id), "unknown personal resource boundary");
+    await check(service.serviceHref + PERSONAL_RESOURCE_SUFFIX[service.id], { headers: forgedHeaders }, [401], `anonymous personal resource ${service.id}`, true);
     assert(typeof service.slug === "string" && /^[a-z0-9-]+$/.test(service.slug), "service slug is invalid");
     await check(`/api/services/${service.slug}/artifact`, { cookie }, [404], `retired artifact ${service.id}`);
   }
@@ -91,6 +102,6 @@ export async function verifyParticipantBoundaries({ request, baseUrl, cookie, st
   assert(JSON.parse(revoked.body).authenticated === false, "logged-out session remains authenticated");
   await check("/api/progress", { cookie }, [401], "revoked session progress", true);
   for (const service of services) {
-    await check(service.serviceHref, { cookie }, [401], `revoked session challenge ${service.id}`, true);
+    await check(service.serviceHref + PERSONAL_RESOURCE_SUFFIX[service.id], { cookie }, [401], `revoked personal resource ${service.id}`, true);
   }
 }
