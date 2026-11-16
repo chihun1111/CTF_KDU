@@ -247,10 +247,14 @@ export function parseTicketValue(ticketValue: string): ParsedTicket | null {
   }
 
   const encoded = ticketValue.slice(0, separatorIndex);
+  const providedSignature = ticketValue.slice(separatorIndex + 1);
+  // Buffer's hex decoder silently discards an odd nibble or trailing non-hex
+  // text. Require the complete SHA-256 digest before comparing its bytes.
+  if (providedSignature.length !== 64 || /[^0-9a-f]/i.test(providedSignature)) return null;
   try {
     return {
       payload: Buffer.from(encoded, "base64url"),
-      providedSignature: ticketValue.slice(separatorIndex + 1),
+      providedSignature,
     };
   } catch {
     return null;

@@ -219,3 +219,34 @@ test("malformed upstream JSON becomes a controlled gateway error", async () => {
   const result = await serverApi("/api/auth/me", {}, "");
   assert.deepEqual({ ok: result.ok, status: result.ok ? null : result.status }, { ok: false, status: 502 });
 });
+
+test("discarded upstream error bodies are cancelled while preserving the original response", async () => {
+  for (const status of [401, 403, 429, 503]) {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode("upstream error")); },
+      cancel() { cancelled = true; },
+    });
+    const upstream = mock.method(globalThis, "fetch", async () => new Response(body, {
+      status, headers: { "retry-after": "5" },
+    }));
+    const result = await serverApi("/api/auth/me", {}, "");
+    assert.equal(result.ok, false);
+    if (result.ok) assert.fail("upstream errors must remain errors");
+    assert.equal(result.status, status);
+    assert.equal(result.headers.get("retry-after"), "5");
+    assert.equal(cancelled, true, `status ${status} must release its unread stream`);
+    assert.equal(upstream.mock.callCount(), 1);
+    upstream.mock.restore();
+  }
+});
+
+test("an already failed error stream does not hide its upstream status or trigger a retry", async () => {
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) { controller.error(new Error("stream unavailable")); },
+  });
+  const upstream = mock.method(globalThis, "fetch", async () => new Response(body, { status: 503 }));
+  const result = await serverApi("/api/admin/hints/release", { method: "POST" }, "");
+  assert.deepEqual({ ok: result.ok, status: result.ok ? null : result.status }, { ok: false, status: 503 });
+  assert.equal(upstream.mock.callCount(), 1);
+});

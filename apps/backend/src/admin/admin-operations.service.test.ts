@@ -3,6 +3,39 @@ import test from "node:test";
 import { AdminOperationsService } from "./admin-operations.service.js";
 import type { OnlineCountResult } from "../presence/online-count.service.js";
 
+function auditService(metadata: unknown, action = "ADMIN_AUDIT_LOGS_VIEWED") {
+  return new AdminOperationsService({
+    async getSummaryCounts() { throw new Error("unused"); },
+    async listParticipants() { throw new Error("unused"); },
+    async listSubmissions() { throw new Error("unused"); },
+    async listClears() { throw new Error("unused"); },
+    async listChallengeStatus() { throw new Error("unused"); },
+    async getSystemHealthSnapshot() { throw new Error("unused"); },
+    async listAuditLogs() {
+      return {
+        items: [{ id: "audit-legacy", userId: null, action, metadata, createdAt: new Date("2026-05-10T00:00:00Z") }],
+        page: 1, pageSize: 50, totalCount: 1,
+      };
+    },
+  }, { async getOnlineCount() { throw new Error("unused"); } });
+}
+
+test("audit log views tolerate nullable and non-object JSON metadata", async () => {
+  for (const metadata of [null, undefined, false, 1, "legacy", ["legacy"]]) {
+    const result = await auditService(metadata).listAuditLogs();
+    assert.equal(result.items[0]?.id, "audit-legacy");
+    assert.deepEqual(result.items[0]?.metadata, {});
+  }
+});
+
+test("unknown audit actions cannot select inherited object properties or expose unapproved metadata", async () => {
+  for (const action of ["__proto__", "constructor", "toString", "FUTURE_ACTION"]) {
+    const result = await auditService({ page: 1, reason: "unapproved", password: "sensitive" }, action).listAuditLogs();
+    assert.equal(result.items[0]?.action, action);
+    assert.deepEqual(result.items[0]?.metadata, {});
+  }
+});
+
 test("AdminOperationsService builds summary from aggregate counts and online sessions", async () => {
   const service = new AdminOperationsService(
     {

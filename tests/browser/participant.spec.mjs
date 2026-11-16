@@ -44,9 +44,8 @@ async function screenshot(page, name, masks = []) {
   });
 }
 
-async function register(page) {
+async function register(page, password = `Browser${randomBytes(18).toString('hex')}`, verifyPasswordPolicy = false) {
   const studentId = String(randomInt(8800000, 8899999));
-  const password = `Browser-${randomBytes(18).toString('base64url')}`;
   const welcome = await page.goto('/');
   expect(welcome.status(), 'the public main page opens directly').toBe(200);
   await expect(page.getByRole('heading', { name: '교내 CTF에 도전하세요', exact: true })).toBeVisible();
@@ -57,8 +56,19 @@ async function register(page) {
   await expect(page.getByRole('button', { name: '회원가입', exact: true })).toBeDisabled();
   await page.getByLabel(/^학번/).fill(studentId);
   await page.getByLabel(/^비밀번호/).fill(password);
+  expect(await page.getByLabel(/^비밀번호/).inputValue() === password, 'registration retains the complete accepted password').toBe(true);
   await page.getByRole('checkbox', { name: '[필수] 서비스 이용과 보안 운영 로그 수집에 동의합니다.' }).check();
   await page.getByRole('checkbox', { name: '[필수] 로그인 유지에 필요한 쿠키 사용에 동의합니다.' }).check();
+  if (verifyPasswordPolicy) {
+    await expect(page.getByRole('button', { name: '회원가입', exact: true })).toBeEnabled();
+    for (const invalid of ['Password1!', 'Password 1', 'Password😀1', 'Password한글1']) {
+      await page.getByLabel(/^비밀번호/).fill(invalid);
+      expect(await page.getByLabel(/^비밀번호/).inputValue() === invalid, 'invalid registration input is not silently rewritten').toBe(true);
+      await expect(page.getByRole('button', { name: '회원가입', exact: true })).toBeDisabled();
+    }
+    await page.getByLabel(/^비밀번호/).fill(password);
+    await expect(page.getByRole('button', { name: '회원가입', exact: true })).toBeEnabled();
+  }
   await page.getByRole('button', { name: '회원가입', exact: true }).click();
   await expect(page).toHaveURL((url) => url.pathname === '/');
   await expect(page.locator('.serviceDirectoryCard')).toHaveCount(8);
@@ -355,7 +365,21 @@ test('desktop participant journey: discovery, partial grading and fixture-assist
 
 test('mobile viewport: registration, all service entry pages, search and submit validation', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await register(page);
+  const account = await register(page, 'Ab9'.repeat(42) + 'X7', true);
+  await page.getByRole('button', { name: '로그아웃', exact: true }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await page.getByLabel(/^학번/).fill(account.studentId);
+  for (const invalid of ['Password1!', 'Password 1', 'Password😀1', 'Password한글1']) {
+    await page.getByLabel(/^비밀번호/).fill(invalid);
+    expect(await page.getByLabel(/^비밀번호/).inputValue() === invalid, 'invalid login input is not silently rewritten').toBe(true);
+    await expect(page.getByRole('button', { name: '로그인', exact: true })).toBeDisabled();
+  }
+  await screenshot(page, 'mobile-password-policy');
+  await page.getByLabel(/^비밀번호/).fill(account.password);
+  expect(await page.getByLabel(/^비밀번호/).inputValue() === account.password, 'login retains the complete 128-character ASCII password').toBe(true);
+  await page.getByRole('button', { name: '로그인', exact: true }).click();
+  await expect(page).toHaveURL((url) => url.pathname === '/');
+  record('registration and login reject symbols, whitespace, emoji and Korean; a 128-character ASCII password succeeds');
   await layout(page, 'mobile hub');
   await screenshot(page, 'mobile-hub');
   for (let index = 0; index < services.length; index += 1) {

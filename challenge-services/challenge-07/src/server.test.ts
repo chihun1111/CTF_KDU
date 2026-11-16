@@ -122,6 +122,11 @@ test("challenge-07 isolates read-only puzzle data and removes it when the reques
       const otherRows = await searchPosts(otherDbPath, flagQuery);
       assert.equal(JSON.stringify(otherRows).includes(flag), false);
       assert(otherRows.some((row) => row.title === "KDUCTF" + "{other_user_flag_07}"));
+      await assert.rejects(
+        () => searchPosts(dbPath, `missing'; ATTACH DATABASE '${otherDbPath.replaceAll("'", "''")}' AS other_board; SELECT id, flag AS title, source AS author FROM other_board.flags;--`),
+        /read-only|rejected|safe mode/i,
+        "even knowing another live request's database path must not bypass participant isolation",
+      );
     }, async () => "KDUCTF" + "{other_user_flag_07}");
 
     await assert.rejects(

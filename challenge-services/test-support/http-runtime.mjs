@@ -99,6 +99,29 @@ export function registerHttpRuntimeTests({ createServer, challengeId, protectedP
     assert.equal((await send(port, "/health")).status, 200);
   });
 
+  test(`challenge-${challengeId} rejects corrupt and cross-challenge upstream flag responses`, async (t) => {
+    await configureBackend(t);
+    const canary = "synthetic-upstream-data-must-stay-private";
+    const responses = [
+      () => new Response(canary, { status: 500 }),
+      () => new Response(`not-json:${canary}`),
+      () => new Response(JSON.stringify({ flagId: "FLAG-99", flag: canary })),
+      () => new Response(JSON.stringify({ flagId: `FLAG-${challengeId}`, flag: { data: canary } })),
+    ];
+    let nextResponse;
+    t.mock.method(globalThis, "fetch", async () => nextResponse());
+    const port = await startServer(t, createServer);
+    for (const response of responses) {
+      nextResponse = response;
+      const rejected = await send(port, protectedPath);
+      assert.equal(rejected.status, 503);
+      assert.equal(rejected.headers["cache-control"], "no-store");
+      assert.equal(rejected.body.includes(canary), false);
+      assert.equal(rejected.body.includes("test-internal-token"), false);
+      assert.equal((await send(port, "/health")).status, 200, "a malformed upstream response must not terminate the service");
+    }
+  });
+
   test(`challenge-${challengeId} cancels upstream work when the participant disconnects`, async (t) => {
     await configureBackend(t);
     const started = Promise.withResolvers();

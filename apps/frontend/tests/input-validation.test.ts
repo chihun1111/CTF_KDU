@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { passwordSchema, readSessionState } from "../app/lib/auth-validation";
+import { loginFormSchema, passwordSchema, readSessionState, registerFormSchema, studentIdSchema } from "../app/lib/auth-validation";
 import { validateSubmissionFlags } from "../app/lib/submission-validation";
 import { FLAG_IDS, type FlagId } from "../app/lib/types";
 
@@ -8,34 +8,40 @@ function values(flag: string): Record<FlagId, string> {
   return Object.fromEntries(FLAG_IDS.map((id) => [id, id === "FLAG-01" ? flag : ""])) as Record<FlagId, string>;
 }
 
-test("frontend password limits count surrogate pairs like the backend", () => {
-  assert.equal(passwordSchema.safeParse("😀".repeat(4)).success, false);
-  assert.equal(passwordSchema.safeParse("😀".repeat(7)).success, false);
-  assert.equal(passwordSchema.safeParse("😀".repeat(8)).success, true);
-  assert.equal(passwordSchema.safeParse("😀".repeat(128)).success, true);
-  assert.equal(passwordSchema.safeParse("😀".repeat(129)).success, false);
-  assert.equal(passwordSchema.safeParse("a".repeat(128)).success, true);
-  assert.equal(passwordSchema.safeParse("a".repeat(129)).success, false);
+const consent = { consentVersion: "test", requiredLoggingAccepted: true, analyticsLoggingAccepted: false, cookieAccepted: true };
+
+test("login and registration accept unchanged ASCII alphanumeric passwords from 8 to 128 characters", () => {
+  for (const password of ["AbCd1234", "OnlyLetters", "12345678", "A".repeat(128), "0".repeat(128)]) {
+    const input = { studentId: "2622022", password, consent };
+    assert.equal(passwordSchema.parse(password), password);
+    assert.equal(loginFormSchema.parse(input).password, password);
+    assert.equal(registerFormSchema.parse(input).password, password);
+  }
+  for (const password of ["", "A".repeat(7), "A".repeat(129)]) {
+    assert.equal(passwordSchema.safeParse(password).success, false);
+  }
 });
 
-test("frontend password bounds preserve the backend's presentation-selector contract", () => {
-  const cases = [
-    { label: "emoji presentation", unit: "\u2764\uFE0F", accepted: [8, 128], rejected: [4, 7, 129] },
-    { label: "text presentation", unit: "\u2764\uFE0E", accepted: [8, 128], rejected: [7, 129] },
-    { label: "supplementary emoji presentation", unit: "😀\uFE0F", accepted: [8, 128], rejected: [7, 129] },
-    { label: "consecutive selectors", unit: "a\uFE0F\uFE0E", accepted: [4, 64], rejected: [3, 65] },
-    { label: "standalone selectors", unit: "\uFE0F", accepted: [8, 128], rejected: [7, 129] },
-    { label: "other BMP variation selector", unit: "a\uFE00", accepted: [4, 64], rejected: [3, 65] },
-    { label: "supplementary variation selector", unit: "a\u{E0100}", accepted: [4, 64], rejected: [3, 65] },
-    { label: "zero-width joiner sequence", unit: "👩‍💻", accepted: [3, 42], rejected: [2, 43] },
-  ];
-  for (const { label, unit, accepted, rejected } of cases) {
-    for (const count of accepted) {
-      assert.equal(passwordSchema.safeParse(unit.repeat(count)).success, true, `${label} × ${count}`);
-    }
-    for (const count of rejected) {
-      assert.equal(passwordSchema.safeParse(unit.repeat(count)).success, false, `${label} × ${count}`);
-    }
+test("passwords reject symbols, spaces, every ASCII control, Unicode and nonstring values", () => {
+  const forbidden: unknown[] = [null, undefined, 12345678, [], {},
+    " Valid123", "Valid123 ", "Valid123\r\n", "Valid123😀", "Valid123\u2764\uFE0F",
+    "Valid123\u2764\uFE0E", "Valid123한글", "ＡＢＣＤＥＦ１２", "Valid123é", "Valid123\u00a0",
+    "Valid123\u200b", "\uFFFD".repeat(8), "\uD800".repeat(8), "\uDC00".repeat(8)];
+  for (let code = 0; code <= 127; code += 1) {
+    const character = String.fromCharCode(code);
+    if (!/[A-Za-z0-9]/.test(character)) forbidden.push(`Valid123${character}`);
+  }
+  for (const password of forbidden) {
+    assert.equal(passwordSchema.safeParse(password).success, false, "disallowed password must be rejected without sanitizing");
+    assert.equal(loginFormSchema.safeParse({ studentId: "2622022", password }).success, false);
+    assert.equal(registerFormSchema.safeParse({ studentId: "2622022", password, consent }).success, false);
+  }
+});
+
+test("student IDs are exactly seven digits with no trailing line break or coercion", () => {
+  for (const studentId of ["0000000", "2622022"]) assert.equal(studentIdSchema.parse(studentId), studentId);
+  for (const studentId of ["2622022\n", "2622022\r", "2622022\r\n", "2622022 ", " 2622022", "262202", "26220222", "２６２２０２２", 2622022, null]) {
+    assert.equal(studentIdSchema.safeParse(studentId).success, false);
   }
 });
 

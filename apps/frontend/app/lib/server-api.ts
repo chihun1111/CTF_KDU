@@ -69,6 +69,9 @@ export async function serverApi<T>(path: string, init: RequestInit = {}, cookieH
   }
 
   if (!response.ok) {
+    // Error payloads are not forwarded. Release the unread stream explicitly
+    // instead of holding its connection until garbage collection or timeout.
+    await response.body?.cancel().catch(() => undefined);
     return {
       ok: false,
       status: response.status,

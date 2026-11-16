@@ -17,6 +17,9 @@ function writeConfig(config) {
 function baseConfig() {
   const challenge = (id) => ({
     expose: ["8080"],
+    cap_drop: ["ALL"],
+    cap_add: ["DAC_OVERRIDE"],
+    security_opt: ["no-new-privileges:true"],
     networks: { ctf_challenges: null },
     secrets: [{ source: `internal_service_token_${id}` }],
     environment: {
@@ -48,9 +51,12 @@ function baseConfig() {
         ports: [{ published: "80", target: 80 }],
         networks: { ctf_public: null, ctf_app: null, ctf_challenges: null },
       },
-      frontend: { expose: ["3000"], networks: { ctf_app: null } },
+      frontend: { expose: ["3000"], networks: { ctf_app: null }, cap_drop: ["ALL"], security_opt: ["no-new-privileges:true"] },
       backend: {
         expose: ["8080"],
+        cap_drop: ["ALL"],
+        cap_add: ["DAC_OVERRIDE"],
+        security_opt: ["no-new-privileges:true"],
         networks: { ctf_app: null, ctf_internal: null, ctf_challenges: null },
         secrets: [
           { source: "flag_encryption_key" },
@@ -90,8 +96,9 @@ function baseConfig() {
 }
 
 function run(config) {
+  const configFile = writeConfig(config);
   try {
-    const output = execFileSync(process.execPath, [scriptPath, "--config-json", writeConfig(config)], {
+    const output = execFileSync(process.execPath, [scriptPath, "--config-json", configFile], {
       encoding: "utf8",
       stdio: "pipe",
     });
@@ -123,6 +130,41 @@ test("verify-compose-static rejects host-published internals and challenge flag 
   assert.match(result.output, /challenge-01 must not receive flag_encryption_key/);
 });
 
+test("verify-compose-static rejects network attachments that cross the deployment boundary", () => {
+  for (const [name, network] of [["challenge-07", "ctf_internal"], ["challenge-01", "ctf_public"], ["frontend", "ctf_challenges"], ["backend", "ctf_public"]]) {
+    const config = baseConfig();
+    config.services[name].networks[network] = null;
+    const result = run(config);
+    assert.notEqual(result.status, 0, `${name} must not attach to ${network}`);
+    assert.match(result.output, /network boundary/);
+  }
+});
+
+test("verify-compose-static rejects host namespaces and privileged challenge containers", () => {
+  for (const override of [{ network_mode: "host" }, { pid: "host" }, { ipc: "host" }, { privileged: true }, { cap_add: ["SYS_ADMIN"] }, { cap_drop: [] }, { security_opt: ["no-new-privileges:false"] }]) {
+    const config = baseConfig();
+    Object.assign(config.services["challenge-07"], override);
+    const result = run(config);
+    assert.notEqual(result.status, 0, `isolation bypass ${Object.keys(override)[0]} must be rejected`);
+    assert.match(result.output, /isolation boundary/);
+  }
+});
+
+test("verify-compose-static rejects sensitive challenge environment values and extra filesystem mounts", () => {
+  for (const override of [
+    { environment: { ...baseConfig().services["challenge-07"].environment, FLAG_ENCRYPTION_KEY: "fixture-only" } },
+    { volumes: [{ type: "bind", source: "/var/run/docker.sock", target: "/var/run/docker.sock" }] },
+    { volumes_from: ["backend:ro"] },
+    { configs: [{ source: "unreviewed_config", target: "/app/extra.conf" }] },
+    { secrets: [{ source: "internal_service_token_07" }, { source: "unreviewed_secret" }] },
+  ]) {
+    const config = baseConfig();
+    Object.assign(config.services["challenge-07"], override);
+    const result = run(config);
+    assert.notEqual(result.status, 0, "challenge containers must receive only their expected secret and bounded state");
+  }
+});
+
 test("verify-compose-static rejects unbounded SQLite state and a writable root", () => {
   const config = baseConfig();
   config.services["challenge-07"].read_only = false;
@@ -131,6 +173,20 @@ test("verify-compose-static rejects unbounded SQLite state and a writable root",
   assert.notEqual(result.status, 0);
   assert.match(result.output, /read-only root filesystem/);
   assert.match(result.output, /private bounded tmpfs/);
+});
+
+test("verify-compose-static rejects extra or contradictory tmpfs state mounts", () => {
+  const valid = baseConfig().services["challenge-07"].tmpfs[0];
+  for (const tmpfs of [[valid, "/extra"], [valid, "/app/state:size=1g"], [`${valid},size=1g`], [`${valid},exec`]]) {
+    const config = baseConfig();
+    config.services["challenge-07"].tmpfs = tmpfs;
+    const result = run(config);
+    assert.notEqual(result.status, 0);
+    assert.match(result.output, /private bounded tmpfs/);
+  }
+  const config = baseConfig();
+  config.services["challenge-01"].tmpfs = ["/extra"];
+  assert.notEqual(run(config).status, 0);
 });
 
 test("verify-compose-static rejects cross-challenge token mounts", () => {

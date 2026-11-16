@@ -104,7 +104,7 @@ export type AdminAuditLogRow = {
   id: string;
   userId: string | null;
   action: string;
-  metadata: Record<string, unknown>;
+  metadata: unknown;
   createdAt: Date;
 };
 
@@ -192,20 +192,23 @@ const AUDIT_METADATA_KEYS_BY_ACTION: Record<string, readonly string[]> = {
   ARTIFACT_GENERATION_FAILED: ["logCategory", "reason", "challengeId"],
 };
 
-const SAFE_AUDIT_METADATA_KEYS = new Set([
-  ...Object.values(AUDIT_METADATA_KEYS_BY_ACTION).flat(),
-]);
-
 function isSafeAuditMetadataValue(value: unknown): value is string | number | boolean | null {
   return value === null || ["string", "number", "boolean"].includes(typeof value);
 }
 
-function sanitizeAuditMetadata(action: string, metadata: Record<string, unknown>): Record<string, string | number | boolean | null> {
-  const allowedKeys = AUDIT_METADATA_KEYS_BY_ACTION[action] ?? [...SAFE_AUDIT_METADATA_KEYS];
+function sanitizeAuditMetadata(action: string, metadata: unknown): Record<string, string | number | boolean | null> {
+  // The database permits NULL and arbitrary JSON. Legacy rows must not break the
+  // whole operator view, and unknown actions have no approved metadata schema.
+  if (metadata === null || typeof metadata !== "object" || Array.isArray(metadata) ||
+    !Object.hasOwn(AUDIT_METADATA_KEYS_BY_ACTION, action)) {
+    return {};
+  }
+  const allowedKeys = AUDIT_METADATA_KEYS_BY_ACTION[action] ?? [];
+  const fields = metadata as Record<string, unknown>;
   const sanitized: Record<string, string | number | boolean | null> = {};
 
   for (const key of allowedKeys) {
-    const value = metadata[key];
+    const value = fields[key];
     if (isSafeAuditMetadataValue(value)) {
       sanitized[key] = value;
     }

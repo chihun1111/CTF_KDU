@@ -47,6 +47,15 @@ const CHALLENGE_SERVICES = [
   "challenge-08",
 ];
 
+const SERVICE_NETWORKS = {
+  nginx: ["ctf_public", "ctf_app", "ctf_challenges"],
+  frontend: ["ctf_app"],
+  backend: ["ctf_app", "ctf_internal", "ctf_challenges"],
+  postgres: ["ctf_internal"],
+  redis: ["ctf_internal"],
+  ...Object.fromEntries(CHALLENGE_SERVICES.map((name) => [name, ["ctf_challenges"]])),
+};
+
 const INTERNAL_SERVICE_TOKEN_SECRETS = CHALLENGE_SERVICES.map((serviceName) =>
   `internal_service_token_${serviceName.slice(-2)}`,
 );
@@ -156,6 +165,25 @@ for (const [name, service] of Object.entries(services)) {
   if (name !== "nginx") {
     assert(!service.ports || service.ports.length === 0, `Only nginx may publish host ports: ${name}`);
   }
+  const expectedNetworks = SERVICE_NETWORKS[name];
+  if (expectedNetworks) {
+    assert(
+      JSON.stringify([...serviceNetworks(service)].sort()) === JSON.stringify([...expectedNetworks].sort()),
+      `${name} violates its network boundary`,
+    );
+  }
+  assert(!service.privileged && !service.network_mode && (!service.pid || service.pid === "private") && (!service.ipc || service.ipc === "private"),
+    `${name} violates its isolation boundary through privilege or shared namespaces`);
+  const allowedCapabilities = name === "backend" || CHALLENGE_SERVICES.includes(name) ? ["DAC_OVERRIDE"] : [];
+  assert((service.cap_add ?? []).every((capability) => allowedCapabilities.includes(String(capability).toUpperCase().replace(/^CAP_/, ""))),
+    `${name} violates its isolation boundary through extra capabilities`);
+  if (name === "frontend" || name === "backend" || CHALLENGE_SERVICES.includes(name)) {
+    assert((service.cap_drop ?? []).some((capability) => String(capability).toUpperCase() === "ALL"),
+      `${name} violates its isolation boundary without dropping default capabilities`);
+    const privilegeOptions = (service.security_opt ?? []).filter((option) => String(option).startsWith("no-new-privileges"));
+    assert(privilegeOptions.length === 1 && /^no-new-privileges(?:(?::|=)true)?$/.test(privilegeOptions[0]),
+      `${name} violates its isolation boundary without no-new-privileges`);
+  }
 }
 assert((services.nginx?.ports ?? []).length === 1, "nginx must publish exactly one host port");
 
@@ -179,6 +207,13 @@ for (const challenge of CHALLENGE_SERVICES) {
   const environment = services[challenge]?.environment ?? {};
   const expectedTokenSecret = `internal_service_token_${challenge.slice(-2)}`;
   assert(secrets.includes(expectedTokenSecret), `${challenge} must receive ${expectedTokenSecret}`);
+  assert(secrets.length === 1 && secrets[0] === expectedTokenSecret,
+    `${challenge} must receive only its own service token secret`);
+  assert(["volumes", "volumes_from", "devices", "configs"].every((key) => (services[challenge]?.[key] ?? []).length === 0),
+    `${challenge} must not receive extra filesystem or device mounts`);
+  if (challenge !== "challenge-07") {
+    assert((services[challenge]?.tmpfs ?? []).length === 0, `${challenge} must not receive unreviewed tmpfs mounts`);
+  }
   for (const tokenSecret of INTERNAL_SERVICE_TOKEN_SECRETS) {
     if (tokenSecret !== expectedTokenSecret) {
       assert(!secrets.includes(tokenSecret), `${challenge} must not receive ${tokenSecret}`);
@@ -191,15 +226,24 @@ for (const challenge of CHALLENGE_SERVICES) {
   assert(!("INTERNAL_SERVICE_TOKEN" in environment), `${challenge} must not receive a raw INTERNAL_SERVICE_TOKEN value`);
   for (const forbidden of SECRET_FORBIDDEN_IN_CHALLENGES) {
     assert(!secrets.includes(forbidden), `${challenge} must not receive ${forbidden}`);
+    const key = forbidden.toUpperCase();
+    assert(!(key in environment) && !(`${key}_FILE` in environment),
+      `${challenge} must not receive sensitive ${key} environment configuration`);
   }
   assert(serviceNetworks(services[challenge]).includes("ctf_challenges"), `${challenge} must attach to ctf_challenges`);
 }
 
 const sqliteService = services["challenge-07"];
 assert(sqliteService?.read_only === true, "challenge-07 must have a read-only root filesystem");
-const sqliteState = (sqliteService?.tmpfs ?? []).find((entry) => typeof entry === "string" && entry.startsWith("/app/state:"));
+const sqliteMounts = sqliteService?.tmpfs ?? [];
+const sqliteState = sqliteMounts[0];
+const sqliteOptions = typeof sqliteState === "string" ? sqliteState.slice("/app/state:".length).split(",") : [];
+const requiredSqliteOptions = ["size=64m", "uid=1000", "gid=1000", "mode=0700", "noexec", "nosuid", "nodev"];
 assert(
-  typeof sqliteState === "string" && ["size=64m", "uid=1000", "gid=1000", "mode=0700", "noexec", "nosuid", "nodev"].every((option) => sqliteState.split(/[:,]/).includes(option)),
+  sqliteMounts.length === 1 && typeof sqliteState === "string" && sqliteState.startsWith("/app/state:") &&
+    requiredSqliteOptions.every((option) => sqliteOptions.includes(option)) &&
+    sqliteOptions.every((option) => requiredSqliteOptions.includes(option) || option === "rw") &&
+    new Set(sqliteOptions.map((option) => option.split("=")[0])).size === sqliteOptions.length,
   "challenge-07 state must be a private bounded tmpfs",
 );
 if (failures.length > 0) {

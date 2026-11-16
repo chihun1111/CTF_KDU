@@ -50,6 +50,7 @@ test("runtime-smoke publishes the deployment checklist probes it can execute", (
   assert.deepEqual(checklist.disabledEndpoints, ["/api/services/it-center-status/artifact"]);
   assert.equal(checklist.optionalClearFlow, "--flags-file");
   assert.equal(checklist.optionalAdminFlow, "--admin-cookie");
+  assert.equal(checklist.optionalBoundaryFlow, "--strict-boundaries");
 });
 
 test("runtime-smoke accepts the pnpm argument delimiter used in deployment docs", () => {
@@ -198,6 +199,11 @@ test("runtime-smoke accepts the current services response shape", async () => {
     }
 
     if (url.pathname === "/api/admin/operations/online-count") {
+      if (request.headers.cookie === "ctf_session=mock-admin") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ onlineSessionCount: 2, source: "db_last_seen_fallback" }));
+        return;
+      }
       response.writeHead(403).end();
       return;
     }
@@ -221,10 +227,11 @@ test("runtime-smoke accepts the current services response shape", async () => {
   try {
     const address = server.address();
     const port = typeof address === "object" && address ? address.port : 0;
-    const result = await execNode(["scripts/runtime-smoke.mjs", "--base-url", `http://127.0.0.1:${port}`]);
+    const result = await execNode(["scripts/runtime-smoke.mjs", "--base-url", `http://127.0.0.1:${port}`, "--admin-cookie", "ctf_session=mock-admin"]);
 
     assert.equal(result.status, 0, result.output);
     assert.match(result.output, /service list contains the eight participant services/);
+    assert.match(result.output, /admin cookie can read aggregate online count/);
   } finally {
     await new Promise((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));

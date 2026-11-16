@@ -3,20 +3,16 @@ import type { SessionState } from "./types";
 
 export const consentVersion = "campus-ctf-2026-required-v1";
 
-export const studentIdSchema = z.string().regex(/^\d{7}$/, {
+export const passwordInputMaxLength = 128;
+
+// An absolute end check also rejects final line breaks, which `$` alone permits.
+export const studentIdSchema = z.string().regex(/^\d{7}(?![\s\S])/, {
   error: "학번은 7자리 숫자 문자열입니다.",
 });
 
-// Match validator.js isLength, used by the backend's class-validator @Length.
-// Its contract subtracts surrogate and FE0E/FE0F presentation pairs from UTF-16
-// length; it does not count general grapheme clusters. Keep these regexes without
-// the Unicode flag so consecutive selectors follow the same backend semantics.
-export const passwordSchema = z.string().refine((value) => {
-  const presentationPairs = value.match(/[^\uFE0F\uFE0E][\uFE0F\uFE0E]/g)?.length ?? 0;
-  const surrogatePairs = value.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g)?.length ?? 0;
-  const length = value.length - presentationPairs - surrogatePairs;
-  return length >= 8 && length <= 128;
-}, { error: "비밀번호는 8자 이상 128자 이하로 입력합니다." });
+export const passwordSchema = z.string().regex(/^[A-Za-z0-9]{8,128}(?![\s\S])/, {
+  error: "비밀번호는 영문 대소문자와 숫자만 사용해 8자 이상 128자 이하로 입력합니다.",
+});
 
 const sessionSchema = z.discriminatedUnion("authenticated", [
   z.object({ authenticated: z.literal(false) }),
