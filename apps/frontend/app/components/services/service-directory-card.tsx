@@ -6,19 +6,20 @@ type ServiceDirectoryCardProps = {
 
 export function ServiceDirectoryCard({ service }: ServiceDirectoryCardProps) {
   return (
-    <article className="serviceDirectoryCard">
+    <article className="serviceDirectoryCard" aria-labelledby={`challenge-${service.id}-title`}>
       <div className="serviceCardTop">
-        <span className="serviceState">이용 가능</span>
-        <span className="serviceNumber" aria-hidden="true">{service.id}</span>
+        <span className="serviceNumber">문제 {service.id}</span>
+        <span className="difficultyBadge" data-level={service.difficultyLevel} aria-label={`난이도: ${service.difficulty}`}>
+          난이도: {service.difficulty}
+        </span>
       </div>
       <div className="serviceCardBody">
-        <p className="serviceDepartment">{service.department}</p>
-        <h2>{service.title}</h2>
+        <p className="serviceCategory">{service.category}</p>
+        <h3 id={`challenge-${service.id}-title`}>{service.title}</h3>
         <p>{service.summary}</p>
       </div>
       <div className="serviceCardFooter">
-        <span className="serviceDate">최근 갱신 {service.updatedAt}</span>
-        <a className="primaryLink" href={service.serviceHref}>
+        <a className="primaryLink" href={service.serviceHref} aria-label={`${service.id}번 ${service.title} 문제 풀기`}>
           {service.actionLabel}
         </a>
       </div>

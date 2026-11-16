@@ -45,6 +45,8 @@ test("SessionAuthService returns null for missing or unknown session cookie", as
 
   assert.equal(await service.authenticateCookieHeader(undefined), null);
   assert.equal(await service.authenticateCookieHeader("foo=bar"), null);
+  assert.equal(await service.authenticateCookieHeader("ctf_session=%broken"), null);
+  assert.equal(await service.authenticateCookieHeader("ctf_session=one; ctf_session=two"), null);
   assert.equal(await service.authenticateCookieHeader("ctf_session=unknown-token"), null);
   assert.deepEqual(events, ["find:hash:unknown-token:true"]);
 });

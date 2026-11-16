@@ -1,4 +1,5 @@
 import { and, eq, gt } from "drizzle-orm";
+import { NotFoundException } from "@nestjs/common";
 import { challengeFlags, challenges, claimTokens } from "@campus-ctf/db";
 import type { EncryptedFieldBundle } from "@campus-ctf/config";
 import type { InternalClaimLookup, InternalClaimRecord, InternalClaimStore } from "./internal-claim.service.js";
@@ -76,7 +77,7 @@ export class InternalClaimDrizzleStore implements InternalClaimStore {
   async createClaimToken(input: { userId: string; flagId: InternalClaimLookup["flagId"]; tokenHash: string; expiresAt: Date }): Promise<void> {
     const challenge = await this.findActiveChallenge(input.flagId);
     if (!challenge) {
-      return;
+      throw new NotFoundException("Challenge not found");
     }
 
     await this.database.db.insert(claimTokens).values({

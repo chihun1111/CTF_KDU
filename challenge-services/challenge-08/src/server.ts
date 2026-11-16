@@ -7,8 +7,11 @@ const serviceId = "service-08";
 const serviceName = "특별상 수령 안내";
 const unitName = "축제준비위원회";
 const challengeId = "08";
+// Runtime smoke verifies these rendered values against the shared public catalog.
+const challengeDifficulty = "고급";
+const challengeDifficultyLevel = 4;
 const ACCESS_GRANT_TTL_MS = 10 * 60 * 1000;
-const PUBLIC_PREFIX = "/bonus/vault";
+const PUBLIC_PREFIX = "/challenges/08";
 
 const SERVICE_PAGE_STYLE = `
       :root { color-scheme: light; --bg: #f8fafc; --surface: #ffffff; --surface-muted: #f4f3f8; --text: #1a1c1f; --muted: #515f74; --border: #e2e8f0; --accent: #003366; --accent-strong: #001e40; --success: #166534; --warning: #92400e; }
@@ -86,6 +89,9 @@ const SERVICE_PAGE_STYLE = `
         }
       }
       .serviceShell { width: min(1280px, calc(100% - 48px)); margin: 0 auto; padding: 40px 0; }
+      .challengeContext { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; grid-column: 1 / -1; margin: 0 0 16px; }
+      .challengeNumber { color: var(--accent); font-size: .86rem; font-weight: 800; white-space: nowrap; }
+      .difficultyBadge { display: inline-flex; align-items: center; min-height: 28px; border: 1px solid currentColor; border-radius: 999px; padding: 2px 10px; color: #6b21a8; background: #faf5ff; font-size: .82rem; font-weight: 800; white-space: nowrap; }
       .serviceHeader, .panel { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 22px; margin-bottom: 16px; }
       .unit { margin: 0 0 8px; color: var(--accent); font-size: .82rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
       h1 { margin: 0; color: var(--accent-strong); font-size: clamp(2rem, 5vw, 3rem); line-height: 1.1; letter-spacing: -.02em; }
@@ -104,6 +110,8 @@ const SERVICE_PAGE_STYLE = `
       .ticketMeta dd { margin: 0; color: var(--accent-strong); font-family: ui-monospace, monospace; font-size: .86rem; overflow-wrap: anywhere; }
       @media (max-width: 760px) { .serviceShell { width: min(100% - 32px, 1280px); } .vaultLayout { grid-template-columns: 1fr; } }
 `;
+
+class UpstreamUnavailableError extends Error {}
 
 type Env = Record<string, string | undefined>;
 type SecretFileReader = (path: string) => Promise<string | Buffer>;
@@ -148,34 +156,62 @@ export function buildFlagBackendRequest(input: {
   return { url: url.toString(), headers };
 }
 
-async function fetchCurrentUserFlag(cookieHeader: string | undefined): Promise<string | null> {
-  const serviceToken = await readInternalServiceToken();
-  if (!serviceToken) {
-    return null;
-  }
-
-  const backendRequest = buildFlagBackendRequest({
-    backendInternalUrl: process.env.BACKEND_INTERNAL_URL,
-    cookieHeader,
-    serviceToken,
-  });
-
-  try {
-    const response = await fetch(backendRequest.url, { headers: backendRequest.headers });
-    if (!response.ok) {
+/** Match backend cookie decoding before using a session token as a local identity. */
+export function readSessionToken(cookieHeader: string | undefined): string | null {
+  if (!cookieHeader || cookieHeader.length > 16_384) return null;
+  let token: string | null = null;
+  for (const part of cookieHeader.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator < 0 || part.slice(0, separator).trim() !== "ctf_session") continue;
+    if (token !== null) return null;
+    const encoded = part.slice(separator + 1).trim();
+    if (!encoded || encoded.length > 512) return null;
+    try {
+      const decoded = decodeURIComponent(encoded);
+      if (!/^[A-Za-z0-9_-]+$/.test(decoded)) return null;
+      token = decoded;
+    } catch {
       return null;
     }
+  }
+  return token;
+}
+
+async function fetchCurrentUserFlag(cookieHeader: string | undefined, signal?: AbortSignal): Promise<string | null> {
+  if (!readSessionToken(cookieHeader)) return null;
+  const serviceToken = await readInternalServiceToken();
+  if (!serviceToken) throw new UpstreamUnavailableError("Service authentication is unavailable");
+
+  try {
+    const backendRequest = buildFlagBackendRequest({
+      backendInternalUrl: process.env.BACKEND_INTERNAL_URL,
+      cookieHeader,
+      serviceToken,
+    });
+    const response = await fetch(backendRequest.url, {
+      headers: backendRequest.headers,
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5_000)]) : AbortSignal.timeout(5_000),
+      redirect: "error",
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      if (response.status === 401 || response.status === 403) return null;
+      throw new UpstreamUnavailableError("Flag service is unavailable");
+    }
     const body = (await response.json()) as FlagResponse;
-    return body.flagId === "FLAG-08" && typeof body.flag === "string" ? body.flag : null;
+    if (body?.flagId !== "FLAG-08" || typeof body.flag !== "string") {
+      throw new UpstreamUnavailableError("Invalid flag service response");
+    }
+    return body.flag;
   } catch {
-    return null;
+    throw new UpstreamUnavailableError("Flag service is unavailable");
   }
 }
 
 // 티켓 서명은 키를 메시지 앞에 붙이는 단순 prefix MAC 구조입니다.
 // (의도적으로 취약한 구조 - 이 문제의 퍼즐은 길이 확장 공격입니다.)
 export function sessionBindingFromCookie(cookieHeader: string | undefined): string | null {
-  const sessionToken = getCookie(cookieHeader, "ctf_session");
+  const sessionToken = readSessionToken(cookieHeader);
   return sessionToken ? createHash("sha256").update(sessionToken).digest("hex") : null;
 }
 
@@ -284,31 +320,50 @@ export type AccessGrantStore = {
   consume(token: string, sessionBinding: string): AccessGrant | undefined;
 };
 
-export function createGrantStore(now: () => number = Date.now): AccessGrantStore {
+export function createGrantStore(now: () => number = Date.now, maxEntries = 10_000): AccessGrantStore {
+  if (!Number.isInteger(maxEntries) || maxEntries < 1) {
+    throw new Error("Access grant capacity must be a positive integer");
+  }
   const grants = new Map<string, AccessGrant>();
+  const sessionTokens = new Map<string, string>();
+  const remove = (token: string, grant: AccessGrant) => {
+    grants.delete(token);
+    if (sessionTokens.get(grant.sessionBinding) === token) sessionTokens.delete(grant.sessionBinding);
+  };
+  const pruneExpired = () => {
+    const timestamp = now();
+    for (const [token, grant] of grants) {
+      if (grant.expiresAt <= timestamp) remove(token, grant);
+    }
+  };
   return {
     issue(sessionBinding: string): string {
+      pruneExpired();
+      // Concurrent checks must not invalidate a redirect already sent to this session.
+      const previousToken = sessionTokens.get(sessionBinding);
+      if (previousToken && grants.has(previousToken)) return previousToken;
+      if (grants.size >= maxEntries) throw new Error("Access grant capacity exceeded");
       const token = randomBytes(24).toString("hex");
       grants.set(token, {
         expiresAt: now() + ACCESS_GRANT_TTL_MS,
         bonusCookieValue: randomBytes(32).toString("hex"),
         sessionBinding,
       });
+      sessionTokens.set(sessionBinding, token);
       return token;
     },
     peek(token: string): AccessGrant | undefined {
       const grant = grants.get(token);
-      if (!grant || grant.expiresAt <= now()) {
+      if (grant && grant.expiresAt <= now()) {
+        remove(token, grant);
         return undefined;
       }
       return grant;
     },
     consume(token: string, sessionBinding: string): AccessGrant | undefined {
       const grant = this.peek(token);
-      if (!grant || grant.sessionBinding !== sessionBinding) {
-        return undefined;
-      }
-      grants.delete(token);
+      if (!grant || grant.sessionBinding !== sessionBinding) return undefined;
+      remove(token, grant);
       return grant;
     },
   };
@@ -339,8 +394,8 @@ export function buildAccessGrantRedirect(token: string, bonusCookieValue: string
   return {
     location: `${PUBLIC_PREFIX}/prize`,
     "set-cookie": [
-      `bonus_access=${token}; Path=/bonus/vault/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600`,
-      `bonus_success=${bonusCookieValue}; Path=/bonus/vault/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600`,
+      `bonus_access=${token}; Path=${PUBLIC_PREFIX}/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600`,
+      `bonus_success=${bonusCookieValue}; Path=${PUBLIC_PREFIX}/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600`,
     ],
   };
 }
@@ -368,14 +423,17 @@ function renderShell(title: string, bodyContent: string): string {
   <body>
     <header class="campusGlobalHeader">
       <div class="campusGlobalHeaderInner">
-        <a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기">
+        <a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기">
           <span class="campusGlobalBrandMark">KDU</span>
-          <span class="campusGlobalBrandText">교내 서비스</span>
+          <span class="campusGlobalBrandText">교내 CTF</span>
         </a>
-        <a class="campusGlobalHomeLink" href="/hub">전체 서비스</a>
+        <a class="campusGlobalHomeLink" href="/">문제 목록</a>
       </div>
     </header>
-    <main class="serviceShell">${bodyContent}</main>
+    <main class="serviceShell">
+      <div class="challengeContext" aria-label="문제 정보"><span class="challengeNumber">문제 ${challengeId}</span><span class="difficultyBadge" data-level="${challengeDifficultyLevel}">난이도: ${challengeDifficulty}</span></div>
+      ${bodyContent}
+    </main>
   </body>
 </html>`;
 }
@@ -458,9 +516,11 @@ function sendPage(
 
 async function resolveVaultKeyAndSession(
   cookieHeader: string | undefined,
+  signal?: AbortSignal,
 ): Promise<{ key: Buffer; flag: string; sessionBinding: string } | null> {
-  const flag = await fetchCurrentUserFlag(cookieHeader);
+  const flag = await fetchCurrentUserFlag(cookieHeader, signal);
   const serviceToken = await readInternalServiceToken();
+  signal?.throwIfAborted();
   const sessionBinding = sessionBindingFromCookie(cookieHeader);
   if (!flag || !serviceToken || !sessionBinding) {
     return null;
@@ -470,12 +530,49 @@ async function resolveVaultKeyAndSession(
 
 export function createChallengeServer(grants = grantStore) {
   return createServer((request, response) => {
-    void handleRequest(request, response, grants);
+    const cancellation = new AbortController();
+    const abortDisconnectedRequest = () => {
+      if (!response.writableFinished) cancellation.abort();
+    };
+    request.once("aborted", abortDisconnectedRequest);
+    response.once("close", abortDisconnectedRequest);
+    void handleRequest(request, response, cancellation.signal, grants).catch((error: unknown) => {
+      // Do not let a filesystem, upstream, or parsing failure terminate the service.
+      if (response.destroyed || response.writableEnded) return;
+      if (response.headersSent) {
+        response.destroy();
+        return;
+      }
+      response.writeHead(error instanceof UpstreamUnavailableError ? 503 : 500, {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      response.end("요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.\n");
+    }).finally(() => {
+      request.off("aborted", abortDisconnectedRequest);
+      response.off("close", abortDisconnectedRequest);
+    });
   });
 }
 
-async function handleRequest(request: IncomingMessage, response: ServerResponse, grants = grantStore): Promise<void> {
-  const url = new URL(request.url ?? "/", "http://localhost");
+async function handleRequest(request: IncomingMessage, response: ServerResponse, signal: AbortSignal, grants = grantStore): Promise<void> {
+  let url: URL;
+  try {
+    url = new URL(request.url ?? "/", "http://localhost");
+  } catch {
+    response.writeHead(400, {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    response.end("잘못된 요청입니다.\n");
+    return;
+  }
+  const allowedMethod = url.pathname === "/check" ? "POST" : "GET";
+  if (request.method !== allowedMethod) {
+    response.writeHead(405, { allow: allowedMethod, "cache-control": "no-store" });
+    response.end();
+    return;
+  }
 
   if (url.pathname === "/health") {
     response.writeHead(200, {
@@ -487,7 +584,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   }
 
   if (url.pathname === "/") {
-    const context = await resolveVaultKeyAndSession(request.headers.cookie);
+    const context = await resolveVaultKeyAndSession(request.headers.cookie, signal);
     if (!context) {
       response.writeHead(401, {
         "content-type": "text/plain; charset=utf-8",
@@ -503,7 +600,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       // 티켓은 참가자가 내용을 볼 수 있어야 하므로 HttpOnly를 붙이지 않습니다.
       // 위조 방지는 서명의 역할이며, 이 문제의 목표는 그 서명을 확장해 넘는 것입니다.
       sendPage(response, 200, renderVaultPage("guest"), {
-        "set-cookie": `vault_ticket=${encodeTicketValue(context.key, buildGuestPayload())}; Path=/bonus/vault; SameSite=Lax`,
+        "set-cookie": `vault_ticket=${encodeTicketValue(context.key, buildGuestPayload())}; Path=${PUBLIC_PREFIX}; SameSite=Lax`,
       });
       return;
     }
@@ -514,7 +611,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   }
 
   if (url.pathname === "/check" && request.method === "POST") {
-    const context = await resolveVaultKeyAndSession(request.headers.cookie);
+    const context = await resolveVaultKeyAndSession(request.headers.cookie, signal);
     if (!context) {
       response.writeHead(401, {
         "content-type": "text/plain; charset=utf-8",
@@ -532,7 +629,13 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       return;
     }
 
-    const token = grants.issue(context.sessionBinding);
+    let token: string;
+    try {
+      token = grants.issue(context.sessionBinding);
+    } catch {
+      sendPage(response, 503, renderShell("잠시 후 다시 시도", "<div class=\"panel\"><p>요청이 많습니다. 잠시 후 다시 시도해 주세요.</p></div>"));
+      return;
+    }
     const grant = grants.peek(token);
     if (!grant) {
       sendPage(response, 500, renderDeniedPage(role));
@@ -548,7 +651,22 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   }
 
   if (url.pathname === "/prize") {
-    const context = await resolveVaultKeyAndSession(request.headers.cookie);
+    // A speculative load or embedded resource must not spend a one-use grant.
+    // Same-origin fetch remains supported for participants solving the puzzle.
+    const purpose = [request.headers.purpose, request.headers["sec-purpose"]].join(" ");
+    const site = request.headers["sec-fetch-site"];
+    const destination = request.headers["sec-fetch-dest"];
+    if (/\b(?:prefetch|prerender)\b/i.test(purpose)
+      || site === "cross-site" || site === "same-site"
+      || (destination && destination !== "document" && destination !== "empty")) {
+      response.writeHead(403, {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      response.end("페이지를 직접 열어 수령 권한을 확인해 주세요.\n");
+      return;
+    }
+    const context = await resolveVaultKeyAndSession(request.headers.cookie, signal);
     if (!context) {
       response.writeHead(401, {
         "content-type": "text/plain; charset=utf-8",

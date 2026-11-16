@@ -1,9 +1,9 @@
 FROM node:24-bookworm-slim AS deps
 WORKDIR /app
 RUN corepack enable
-COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY challenge-services/challenge-08/package.json challenge-services/challenge-08/package.json
-RUN pnpm install --frozen-lockfile=false --filter challenge-08...
+RUN pnpm install --frozen-lockfile --filter challenge-08...
 
 FROM deps AS build
 COPY challenge-services/challenge-08 challenge-services/challenge-08

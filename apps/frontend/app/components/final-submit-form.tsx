@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { submitFinalFlags } from "../lib/client-api";
+import { validateSubmissionFlags } from "../lib/submission-validation";
 import { FLAG_IDS, type FinalSubmitResult, type FlagId } from "../lib/types";
+import { FlagResultList } from "./flag-result-list";
 
 type FinalSubmitFormProps = {
   initialResults: Partial<Record<FlagId, { correct: boolean }>>;
@@ -14,7 +16,6 @@ type FinalSubmitFormProps = {
 const flagPrefix = "KDUCTF";
 const flagExampleSuffix = "{...}";
 const flagExample = [flagPrefix, flagExampleSuffix].join("");
-const flagPattern = new RegExp(`^${flagPrefix}\\{[^\\r\\n{}]{1,220}\\}$`);
 
 function initialValues(): Record<FlagId, string> {
   return Object.fromEntries(FLAG_IDS.map((flagId) => [flagId, ""])) as Record<FlagId, string>;
@@ -28,31 +29,16 @@ export function FinalSubmitForm({ initialResults, initialCorrectCount, requiredC
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  function validate(): boolean {
-    const nextErrors: Partial<Record<FlagId, string>> = {};
-    let filledCount = 0;
-    for (const flagId of FLAG_IDS) {
-      const value = values[flagId].trim();
-      if (!value) {
-        continue;
-      }
-      filledCount += 1;
-      if (!flagPattern.test(value)) {
-        nextErrors[flagId] = `${flagExample} 형식의 전체 문자열을 한 줄로 입력합니다.`;
-      }
-    }
-    if (filledCount === 0) {
-      nextErrors["FLAG-01"] = "확인할 플래그를 한 개 이상 입력합니다.";
-    }
-    setFieldErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
-  }
-
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pending) return;
     setMessage(null);
-    setResult(null);
-    if (!validate() || pending) {
+    const nextErrors = validateSubmissionFlags(values);
+    setFieldErrors(nextErrors);
+    const firstInvalid = FLAG_IDS.find((flagId) => nextErrors[flagId] !== undefined);
+    if (firstInvalid) {
+      const field = event.currentTarget.elements.namedItem(`flagsByFlagId.${firstInvalid}`);
+      if (field instanceof HTMLInputElement) field.focus();
       return;
     }
 
@@ -74,7 +60,9 @@ export function FinalSubmitForm({ initialResults, initialCorrectCount, requiredC
       }
 
       if (!response.ok) {
-        setMessage("제출을 처리하지 못했습니다. 입력값을 확인해주세요.");
+        setMessage(response.status >= 500
+          ? "제출 서비스를 사용할 수 없습니다. 입력한 값은 유지됩니다. 잠시 후 다시 시도해주세요."
+          : "제출을 처리하지 못했습니다. 입력값을 확인해주세요.");
         return;
       }
 
@@ -98,33 +86,45 @@ export function FinalSubmitForm({ initialResults, initialCorrectCount, requiredC
   const correctCount = result?.correctCount ?? initialCorrectCount;
 
   return (
-    <form className="panel submitGrid" onSubmit={submit}>
+    <form className="panel submitGrid" onSubmit={submit} aria-busy={pending}>
       <div className="submitFields">
-        <div className="resultBanner">
+        <div className="resultBanner" aria-live="polite" aria-atomic="true">
           <strong>최근 제출 결과</strong>
           <span>
             {requiredCount}개 중 {correctCount}개 일치
           </span>
         </div>
+        <section className="submissionResults" aria-label="최근 제출의 번호별 결과" aria-live="polite" aria-atomic="true">
+          <p>입력 칸 순서와 관계없이 확인된 플래그 번호를 표시합니다.</p>
+          <FlagResultList results={displayResults} />
+        </section>
 
-        {message ? <p className="formNotice">{message}</p> : null}
+        {message ? <p className="formNotice" role="status">{message}</p> : null}
 
         {FLAG_IDS.map((flagId) => (
           <label className="field flagField" key={flagId}>
             <span>플래그 입력 {Number(flagId.slice(-2))}</span>
             <input
               autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              disabled={pending}
+              maxLength={512}
+              aria-invalid={Boolean(fieldErrors[flagId])}
+              aria-describedby={fieldErrors[flagId] ? `${flagId}-error` : undefined}
               name={`flagsByFlagId.${flagId}`}
               placeholder={flagExample}
               value={values[flagId]}
-              onChange={(event) => setValues((current) => ({ ...current, [flagId]: event.target.value }))}
+              onChange={(event) => {
+                setValues((current) => ({ ...current, [flagId]: event.target.value }));
+                setFieldErrors((current) => {
+                  const next = { ...current };
+                  delete next[flagId];
+                  return next;
+                });
+              }}
             />
-            {fieldErrors[flagId] ? <small className="fieldError">{fieldErrors[flagId]}</small> : null}
-            {displayResults[flagId] ? (
-              <small className={displayResults[flagId]?.correct ? "resultGood" : "resultBad"}>
-                {displayResults[flagId]?.correct ? "일치" : "불일치"}
-              </small>
-            ) : null}
+            {fieldErrors[flagId] ? <small className="fieldError" id={`${flagId}-error`} role="alert">{fieldErrors[flagId]}</small> : null}
           </label>
         ))}
       </div>
@@ -133,14 +133,16 @@ export function FinalSubmitForm({ initialResults, initialCorrectCount, requiredC
         <p className="eyebrow">제출 현황</p>
         <h2>최종 확인 안내</h2>
         <div className="submitProgress" aria-label={`전체 ${requiredCount}개 중 ${correctCount}개 일치`}>
-          <span>현재 확인된 항목</span>
+          <span>이번 제출에서 확인한 항목</span>
           <strong>{correctCount} / {requiredCount}</strong>
         </div>
         <p>찾은 플래그를 한 개 이상 빈 칸에 입력하면 채운 항목만 먼저 확인할 수 있습니다. 칸 위치와 플래그 번호가 달라도 서버가 실제 일치 항목을 찾아 판정합니다.</p>
+        <p>결과는 이번 제출 기준이며 이전 제출의 정답과 합산하지 않습니다. 최종 완료하려면 찾은 8개 플래그를 한 번에 입력해야 합니다.</p>
+        <p>새로고침하면 입력값이 지워집니다. 다른 페이지를 확인하기 전에 찾은 값을 따로 보관해 주세요.</p>
         <p>
           각 값은 <code>{flagExample}</code> 형식의 사용자별 전체 문자열이어야 합니다.
         </p>
-        <p>클리어 인증 정보는 URL이나 브라우저 저장소가 아니라 서버 cookie로만 처리합니다.</p>
+        <p>완료 후 나타나는 인증 화면은 한 번만 표시됩니다. 새로고침하기 전에 화면의 촬영 안내를 확인해 주세요.</p>
         <button className="primaryButton" disabled={pending} type="submit">
           {pending ? "검증 중" : "최종 제출"}
         </button>

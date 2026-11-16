@@ -28,7 +28,7 @@ export default async function HintsPage() {
         <header className="pageHeader">
           <div>
             <p className="eyebrow">운영 안내</p>
-            <h1>공개 안내</h1>
+            <h1>공개 힌트</h1>
             <p className="lede">운영자가 공개한 단계만 표시됩니다. 미공개 단계의 문구는 이 화면으로 전달되지 않습니다.</p>
           </div>
           <nav className="headerActions" aria-label="주요 이동">
@@ -37,8 +37,8 @@ export default async function HintsPage() {
                 운영 화면
               </Link>
             ) : null}
-            <Link className="secondaryLink" href="/hub">
-              허브
+            <Link className="secondaryLink" href="/">
+              문제 목록
             </Link>
             <Link className="primaryLink" href="/submit">
               제출 페이지
@@ -54,7 +54,7 @@ export default async function HintsPage() {
           </div>
         </section>
 
-        <section className="hintChallengeGrid" aria-label="공개 안내 목록">
+        <section className="hintChallengeGrid" aria-label="공개 힌트 목록">
           {hints.data.challenges.map((challenge) => (
             <HintChallengeCard challenge={challenge} key={challenge.number} />
           ))}

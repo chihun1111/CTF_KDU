@@ -1,16 +1,17 @@
 import { readFileSync } from "node:fs";
+import { requestNavigation } from "./runtime-navigation.mjs";
 
 const FINAL_FLAG_IDS = ["FLAG-01", "FLAG-02", "FLAG-03", "FLAG-04", "FLAG-05", "FLAG-06", "FLAG-07", "FLAG-08"];
 
 const ACTIVE_SERVICE_ROUTES = [
-  { id: "01", serviceHref: "/campus/festival/" },
-  { id: "02", serviceHref: "/system/status/" },
-  { id: "03", serviceHref: "/student/assignments/" },
-  { id: "04", serviceHref: "/clubs/admin/" },
-  { id: "05", serviceHref: "/clubs/security/" },
-  { id: "06", serviceHref: "/clubs/build-archive/" },
-  { id: "07", serviceHref: "/community/board/" },
-  { id: "08", serviceHref: "/bonus/vault/" },
+  { id: "01", serviceHref: "/challenges/01/" },
+  { id: "02", serviceHref: "/challenges/02/" },
+  { id: "03", serviceHref: "/challenges/03/" },
+  { id: "04", serviceHref: "/challenges/04/" },
+  { id: "05", serviceHref: "/challenges/05/" },
+  { id: "06", serviceHref: "/challenges/06/" },
+  { id: "07", serviceHref: "/challenges/07/" },
+  { id: "08", serviceHref: "/challenges/08/" },
 ];
 
 const CHECKLIST = {
@@ -24,17 +25,17 @@ const CHECKLIST = {
     "/api/presence/heartbeat",
     "/api/final-submit",
     "/api/admin/operations/online-count",
-    "/hub?userId=smoke-other&session=smoke-other",
+    "/?userId=smoke-other&session=smoke-other",
     "/clear",
-    "/campus/festival/",
-    "/system/status/",
-    "/student/assignments/",
-    "/student/assignments/view?id=1",
-    "/clubs/admin/",
-    "/clubs/security/",
-    "/clubs/build-archive/",
-    "/community/board/",
-    "/bonus/vault/",
+    "/challenges/01/",
+    "/challenges/02/",
+    "/challenges/03/",
+    "/challenges/03/view?id=1",
+    "/challenges/04/",
+    "/challenges/05/",
+    "/challenges/06/",
+    "/challenges/07/",
+    "/challenges/08/",
   ],
   disabledEndpoints: ["/api/services/it-center-status/artifact"],
   optionalClearFlow: "--flags-file",
@@ -152,21 +153,21 @@ function isExpectedServiceRedirect(location, expectedPath, baseUrl) {
 function assertServiceGlobalHeader(body, route) {
   assert(body.includes('class="campusGlobalHeader"'), `${route} did not render campusGlobalHeader`);
   assert(body.includes("KDU"), `${route} did not render the KDU brand mark`);
-  assert(body.includes("교내 서비스"), `${route} did not render the campus service brand text`);
-  assert(body.includes("전체 서비스"), `${route} did not render the all-services link text`);
+  assert(body.includes("교내 CTF"), `${route} did not render the campus service brand text`);
+  assert(body.includes("문제 목록"), `${route} did not render the all-services link text`);
 
   const openingTags = [...body.matchAll(/<a\b[^>]*>/g)].map((match) => match[0]);
   assert(
     openingTags.some(
-      (tag) => /class=["'][^"']*\bcampusGlobalBrand\b[^"']*["']/.test(tag) && /href=["']\/hub["']/.test(tag),
+      (tag) => /class=["'][^"']*\bcampusGlobalBrand\b[^"']*["']/.test(tag) && /href=["']\/["']/.test(tag),
     ),
-    `${route} did not render campusGlobalBrand href=/hub`,
+    `${route} did not render campusGlobalBrand href=/`,
   );
   assert(
     openingTags.some(
-      (tag) => /class=["'][^"']*\bcampusGlobalHomeLink\b[^"']*["']/.test(tag) && /href=["']\/hub["']/.test(tag),
+      (tag) => /class=["'][^"']*\bcampusGlobalHomeLink\b[^"']*["']/.test(tag) && /href=["']\/["']/.test(tag),
     ),
-    `${route} did not render campusGlobalHomeLink href=/hub`,
+    `${route} did not render campusGlobalHomeLink href=/`,
   );
 }
 
@@ -178,8 +179,12 @@ async function request(options, path, init = {}) {
   if (init.cookie) {
     headers.set("cookie", init.cookie);
   }
+  if (path === "/clear" && (init.method ?? "GET").toUpperCase() === "GET") {
+    return requestNavigation(`${options.baseUrl}${path}`, { headers, signal: init.signal });
+  }
   return fetch(`${options.baseUrl}${path}`, {
     ...init,
+    signal: init.signal ?? AbortSignal.timeout(15_000),
     headers,
     redirect: init.redirect ?? "manual",
     body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
@@ -203,6 +208,7 @@ async function main() {
 
   const results = [];
   let cookie = "";
+  let publicServices = [];
 
   async function step(name, callback) {
     await callback();
@@ -271,6 +277,13 @@ async function main() {
       JSON.stringify(serviceRoutes) === JSON.stringify(ACTIVE_SERVICE_ROUTES),
       "service list does not match the eight active service routes",
     );
+    const levels = [1, 2, 2, 2, 1, 2, 3, 4];
+    const labels = ["입문", "초급", "중급", "고급"];
+    for (const [index, service] of body.services.entries()) {
+      assert(service.difficultyLevel === levels[index], `service ${service.id} difficulty level is inconsistent`);
+      assert(service.difficulty === labels[levels[index] - 1], `service ${service.id} difficulty label is inconsistent`);
+      assert(typeof service.category === "string" && service.category.length > 0, `service ${service.id} is missing its category`);
+    }
     assert(
       body.services.every(
         (service) =>
@@ -283,6 +296,7 @@ async function main() {
       ),
       "service list exposed a legacy guide, artifact, or claim link",
     );
+    publicServices = body.services;
   });
 
   await step("legacy artifact download route is disabled", async () => {
@@ -298,13 +312,19 @@ async function main() {
   });
 
   await step("challenge service routes are reachable through nginx", async () => {
-    for (const { serviceHref: route } of ACTIVE_SERVICE_ROUTES) {
+    for (const { id, serviceHref: route } of ACTIVE_SERVICE_ROUTES) {
       const response = await request(options, route, { cookie });
-      assert(![404, 502, 503, 504].includes(response.status), `${route} returned ${response.status}`);
+      assert(response.status === 200, `${route} must open directly with 200, got ${response.status}`);
       const contentType = response.headers.get("content-type") ?? "";
       assert(contentType.includes("text/html"), `${route} content-type was ${contentType}`);
       const body = await response.text();
       assertServiceGlobalHeader(body, route);
+      const service = publicServices.find((item) => item.id === id);
+      const badge = body.match(/<span\b([^>]*\bclass=["']difficultyBadge["'][^>]*)>([^<]*)<\/span>/);
+      assert(badge && badge[2].trim() === `난이도: ${service.difficulty}`, `${route} difficulty does not match the public catalog`);
+      assert(new RegExp(`data-level=["']${service.difficultyLevel}["']`).test(badge[1]), `${route} difficulty level does not match the public catalog`);
+      const references = [...body.matchAll(/\/challenges\/(0[1-8])\//g)].map((match) => match[1]);
+      assert(references.every((number) => number === id), `${route} depends on another challenge page`);
     }
   });
 
@@ -313,14 +333,14 @@ async function main() {
     assert(response.status >= 300 && response.status < 400, `/services/club-security-site returned ${response.status}`);
     const location = response.headers.get("location") ?? "";
     assert(
-      isExpectedServiceRedirect(location, "/clubs/security/", options.baseUrl),
+      isExpectedServiceRedirect(location, "/challenges/05/", options.baseUrl),
       `/services/club-security-site redirected to an unexpected location: ${location || "<missing>"}`,
     );
   });
 
   await step("assignment detail renders html", async () => {
-    const response = await request(options, "/student/assignments/view?id=1", { cookie });
-    assert(response.status === 200, `/student/assignments/view?id=1 returned ${response.status}`);
+    const response = await request(options, "/challenges/03/view?id=1", { cookie });
+    assert(response.status === 200, `/challenges/03/view?id=1 returned ${response.status}`);
     const contentType = response.headers.get("content-type") ?? "";
     assert(contentType.includes("text/html"), `assignment detail content-type was ${contentType}`);
     const body = await response.text();
@@ -330,8 +350,8 @@ async function main() {
   });
 
   await step("authenticated hub renders direct links to all eight services", async () => {
-    const response = await request(options, "/hub?userId=smoke-other&session=smoke-other", { cookie });
-    assert(response.status === 200, `/hub query manipulation returned ${response.status}`);
+    const response = await request(options, "/?userId=smoke-other&session=smoke-other", { cookie });
+    assert(response.status === 200, `/ query manipulation returned ${response.status}`);
     const body = await response.text();
     assert(!body.includes("/services/"), "hub rendered the legacy service guide route");
     for (const { serviceHref } of ACTIVE_SERVICE_ROUTES) {

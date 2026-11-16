@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   auditLogs,
   challengeSeedRows,
@@ -26,6 +26,7 @@ import { publicServiceHrefForFlagId } from "../challenges/challenges.service.js"
 type DatabaseClientLike = {
   db: {
     select(selection?: unknown): any;
+    execute(query: unknown): Promise<unknown>;
   };
 };
 
@@ -53,16 +54,6 @@ function normalizePage(input: { page: number; pageSize: number }): { page: numbe
     pageSize,
     offset: (page - 1) * pageSize,
   };
-}
-
-function latestByUser<T extends { userId: string }>(rows: T[]): Map<string, T> {
-  const result = new Map<string, T>();
-  for (const row of rows) {
-    if (!result.has(row.userId)) {
-      result.set(row.userId, row);
-    }
-  }
-  return result;
 }
 
 function toResultsBySubmission(rows: unknown[]): Map<string, Record<string, { correct: boolean }>> {
@@ -95,15 +86,18 @@ export class AdminOperationsDrizzleStore implements AdminOperationsStore {
       this.database.db
         .select({ count: sql<number>`count(distinct ${finalSubmissions.userId})` })
         .from(finalSubmissions)
-        .where(sql`true`),
+        .innerJoin(users, eq(finalSubmissions.userId, users.id))
+        .where(eq(users.role, "participant")),
       this.database.db
         .select({ count: sql<number>`count(*)` })
         .from(clears)
-        .where(sql`true`),
+        .innerJoin(users, eq(clears.userId, users.id))
+        .where(eq(users.role, "participant")),
       this.database.db
         .select({ count: sql<number>`count(*)` })
         .from(finalSubmissions)
-        .where(sql`true`),
+        .innerJoin(users, eq(finalSubmissions.userId, users.id))
+        .where(eq(users.role, "participant")),
     ]);
 
     return {
@@ -117,89 +111,65 @@ export class AdminOperationsDrizzleStore implements AdminOperationsStore {
   async listParticipants(input: { page: number; pageSize: number; now: Date }): Promise<AdminListResponse<AdminParticipantRow>> {
     const { page, pageSize, offset } = normalizePage(input);
     const onlineSince = new Date(input.now.getTime() - 120 * 1000);
-    const [participantRows, totalRows, latestSubmissionRows, clearRows, sessionRows, submissionCountRows] = await Promise.all([
+    // A nested SQL fragment preserves the outer table qualifier in Drizzle's
+    // single-table projection, so each subquery correlates with users.id.
+    const participantUserId = sql`${users.id}`;
+    // Correlated aggregates operate on the displayed participants. Global row
+    // cutoffs made quieter users disappear once other participants submitted often.
+    const [participantRows, totalRows] = await Promise.all([
       this.database.db
         .select({
           userId: users.id,
           role: users.role,
           registeredAt: users.createdAt,
+          latestCorrectCount: sql<number>`coalesce((
+            select ${finalSubmissions.correctCount} from ${finalSubmissions}
+            where ${finalSubmissions.userId} = ${participantUserId}
+            order by ${finalSubmissions.createdAt} desc, ${finalSubmissions.id} desc limit 1
+          ), 0)`.mapWith(Number),
+          finalSubmissionCount: sql<number>`(
+            select count(*) from ${finalSubmissions} where ${finalSubmissions.userId} = ${participantUserId}
+          )`.mapWith(Number),
+          lastSeenAt: sql<Date | null>`(
+            select max(${sessions.lastSeenAt}) from ${sessions}
+            where ${sessions.userId} = ${participantUserId}
+              and ${sessions.lastSeenAt} >= ${onlineSince.toISOString()}
+              and ${sessions.expiresAt} > ${input.now.toISOString()}
+              and ${sessions.revokedAt} is null
+          )`.mapWith(sessions.lastSeenAt),
+          clearedAt: sql<Date | null>`(
+            select ${clears.clearedAt} from ${clears} where ${clears.userId} = ${participantUserId}
+          )`.mapWith(clears.clearedAt),
         })
         .from(users)
         .where(eq(users.role, "participant"))
-        .orderBy?.(desc(users.createdAt))
+        .orderBy(desc(users.createdAt), desc(users.id))
         .limit(pageSize)
-        .offset(offset) ?? Promise.resolve([]),
+        .offset(offset),
       this.database.db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.role, "participant")),
-      this.database.db
-        .select({
-          userId: finalSubmissions.userId,
-          correctCount: finalSubmissions.correctCount,
-          isClear: finalSubmissions.isClear,
-          createdAt: finalSubmissions.createdAt,
-        })
-        .from(finalSubmissions)
-        .where(sql`true`)
-        .orderBy?.(desc(finalSubmissions.createdAt))
-        .limit(1000)
-        .offset(0) ?? Promise.resolve([]),
-      this.database.db
-        .select({
-          userId: clears.userId,
-          clearedAt: clears.clearedAt,
-        })
-        .from(clears)
-        .where(sql`true`),
-      this.database.db
-        .select({
-          userId: sessions.userId,
-          lastSeenAt: sessions.lastSeenAt,
-        })
-        .from(sessions)
-        .where(and(gte(sessions.lastSeenAt, onlineSince), gte(sessions.expiresAt, input.now), sql`${sessions.revokedAt} is null`))
-        .orderBy(desc(sessions.lastSeenAt))
-        .limit(5000),
-      this.database.db
-        .select({
-          userId: finalSubmissions.userId,
-        })
-        .from(finalSubmissions)
-        .where(sql`true`)
-        .limit(5000),
     ]);
-    const latestSubmissionByUser = latestByUser(
-      latestSubmissionRows as Array<{ userId: string; correctCount: number; isClear: boolean; createdAt: Date }>,
-    );
-    const clearByUser = new Map((clearRows as Array<{ userId: string; clearedAt: Date }>).map((row) => [row.userId, row]));
-    const sessionByUser = new Map((sessionRows as Array<{ userId: string; lastSeenAt: Date }>).map((row) => [row.userId, row]));
-    const submissionCountByUser = new Map<string, number>();
-    for (const row of submissionCountRows as Array<{ userId?: unknown }>) {
-      if (typeof row.userId === "string") {
-        submissionCountByUser.set(row.userId, (submissionCountByUser.get(row.userId) ?? 0) + 1);
-      }
-    }
 
     return {
       items: (participantRows as Array<{
         userId: string;
         role: "participant" | "admin";
         registeredAt: Date;
-      }>).map((row) => {
-        const latest = latestSubmissionByUser.get(row.userId);
-        const clear = clearByUser.get(row.userId);
-        const session = sessionByUser.get(row.userId);
-        return {
-          participantRef: maskUserId(row.userId),
-          role: row.role,
-          registeredAt: row.registeredAt,
-          lastSeenAt: session?.lastSeenAt ?? null,
-          online: Boolean(session),
-          latestCorrectCount: latest?.correctCount ?? 0,
-          requiredCount: 8,
-          cleared: Boolean(clear ?? latest?.isClear),
-          clearedAt: clear?.clearedAt ?? null,
-          finalSubmissionCount: submissionCountByUser.get(row.userId) ?? 0,
-        };
-      }),
+        latestCorrectCount: number;
+        finalSubmissionCount: number;
+        lastSeenAt: Date | null;
+        clearedAt: Date | null;
+      }>).map((row) => ({
+        participantRef: maskUserId(row.userId),
+        role: row.role,
+        registeredAt: row.registeredAt,
+        lastSeenAt: row.lastSeenAt ?? null,
+        online: Boolean(row.lastSeenAt),
+        latestCorrectCount: row.latestCorrectCount ?? 0,
+        requiredCount: 8,
+        cleared: Boolean(row.clearedAt),
+        clearedAt: row.clearedAt ?? null,
+        finalSubmissionCount: row.finalSubmissionCount ?? 0,
+      })),
       page,
       pageSize,
       totalCount: readCount(totalRows),
@@ -208,7 +178,7 @@ export class AdminOperationsDrizzleStore implements AdminOperationsStore {
 
   async listSubmissions(input: { page: number; pageSize: number }): Promise<AdminListResponse<AdminSubmissionRow>> {
     const { page, pageSize, offset } = normalizePage(input);
-    const [submissionRows, totalRows, resultRows] = await Promise.all([
+    const [submissionRows, totalRows] = await Promise.all([
       this.database.db
         .select({
           id: finalSubmissions.id,
@@ -219,20 +189,24 @@ export class AdminOperationsDrizzleStore implements AdminOperationsStore {
         })
         .from(finalSubmissions)
         .innerJoin(users, eq(finalSubmissions.userId, users.id))
-        .where(sql`true`)
-        .orderBy?.(desc(finalSubmissions.createdAt))
+        .where(eq(users.role, "participant"))
+        .orderBy(desc(finalSubmissions.createdAt), desc(finalSubmissions.id))
         .limit(pageSize)
-        .offset(offset) ?? Promise.resolve([]),
-      this.database.db.select({ count: sql<number>`count(*)` }).from(finalSubmissions).where(sql`true`),
-      this.database.db
+        .offset(offset),
+      this.database.db.select({ count: sql<number>`count(*)` }).from(finalSubmissions)
+        .innerJoin(users, eq(finalSubmissions.userId, users.id)).where(eq(users.role, "participant")),
+    ]);
+    const submissionIds = (submissionRows as Array<{ id: string }>).map((row) => row.id);
+    const resultRows = submissionIds.length === 0
+      ? []
+      : await this.database.db
         .select({
           finalSubmissionId: finalSubmissionResults.finalSubmissionId,
           flagId: finalSubmissionResults.flagId,
           isCorrect: finalSubmissionResults.isCorrect,
         })
         .from(finalSubmissionResults)
-        .where(sql`true`),
-    ]);
+        .where(inArray(finalSubmissionResults.finalSubmissionId, submissionIds));
     const resultsBySubmission = toResultsBySubmission(resultRows);
 
     return {
@@ -267,11 +241,12 @@ export class AdminOperationsDrizzleStore implements AdminOperationsStore {
         })
         .from(clears)
         .innerJoin(users, eq(clears.userId, users.id))
-        .where(sql`true`)
-        .orderBy?.(desc(clears.clearedAt))
+        .where(eq(users.role, "participant"))
+        .orderBy(desc(clears.clearedAt), desc(clears.id))
         .limit(pageSize)
-        .offset(offset) ?? Promise.resolve([]),
-      this.database.db.select({ count: sql<number>`count(*)` }).from(clears).where(sql`true`),
+        .offset(offset),
+      this.database.db.select({ count: sql<number>`count(*)` }).from(clears)
+        .innerJoin(users, eq(clears.userId, users.id)).where(eq(users.role, "participant")),
     ]);
 
     return {
@@ -295,26 +270,20 @@ export class AdminOperationsDrizzleStore implements AdminOperationsStore {
           isActive: challenges.isActive,
         })
         .from(challenges)
-        .where(sql`true`)
+        .where(inArray(challenges.flagId, challengeSeedRows.map((seed) => seed.flagId)))
         .orderBy(challenges.flagId)
         .limit(8),
       this.database.db
         .select({
           flagId: finalSubmissionResults.flagId,
-          userId: finalSubmissionResults.userId,
+          count: sql<number>`count(distinct ${finalSubmissionResults.userId})`.mapWith(Number),
         })
         .from(finalSubmissionResults)
-        .where(eq(finalSubmissionResults.isCorrect, true))
-        .limit(5000),
+        .innerJoin(users, eq(finalSubmissionResults.userId, users.id))
+        .where(and(eq(finalSubmissionResults.isCorrect, true), eq(users.role, "participant")))
+        .groupBy(finalSubmissionResults.flagId),
     ]);
-    const solvedByFlag = new Map<string, Set<string>>();
-    for (const row of solvedRows as Array<{ flagId?: unknown; userId?: unknown }>) {
-      if (typeof row.flagId === "string" && typeof row.userId === "string") {
-        const usersForFlag = solvedByFlag.get(row.flagId) ?? new Set<string>();
-        usersForFlag.add(row.userId);
-        solvedByFlag.set(row.flagId, usersForFlag);
-      }
-    }
+    const solvedByFlag = new Map((solvedRows as Array<{ flagId: string; count: number }>).map((row) => [row.flagId, row.count]));
     const challengeByFlag = new Map(
       (challengeRows as Array<{ id: string; flagId: string; title: string; isActive: boolean }>).map((row) => [row.flagId, row]),
     );
@@ -328,8 +297,8 @@ export class AdminOperationsDrizzleStore implements AdminOperationsStore {
         title: challenge?.title ?? seed.title,
         servicePath: publicServiceHrefForFlagId(seed.flagId),
         health: "ok",
-        visible: challenge?.isActive ?? true,
-        solvedCount: solvedByFlag.get(seed.flagId)?.size ?? 0,
+        visible: challenge?.isActive ?? false,
+        solvedCount: solvedByFlag.get(seed.flagId) ?? 0,
         lastHealthcheckAt: now.toISOString(),
       };
     });
@@ -349,7 +318,7 @@ export class AdminOperationsDrizzleStore implements AdminOperationsStore {
         })
         .from(auditLogs)
         .where(whereClause)
-        .orderBy(desc(auditLogs.createdAt))
+        .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
         .limit(pageSize)
         .offset(offset),
       this.database.db.select({ count: sql<number>`count(*)` }).from(auditLogs).where(whereClause),
@@ -377,10 +346,9 @@ export class AdminOperationsDrizzleStore implements AdminOperationsStore {
 
   async getSystemHealthSnapshot(): Promise<AdminSystemHealthSnapshot> {
     const start = Date.now();
-    const pingRows = await this.database.db.select({ count: sql<number>`count(*)` }).from(users).where(sql`true`);
-
-    const [ping] = pingRows as Array<{ count?: unknown }>;
-    if (ping?.count === undefined) {
+    const result = await this.database.db.execute(sql`select 1 as ok`);
+    const ping = (result as { rows?: Array<{ ok?: unknown }> })?.rows?.[0];
+    if (ping?.ok !== 1) {
       throw new Error("Postgres health query failed");
     }
 

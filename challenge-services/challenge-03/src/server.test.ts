@@ -1,3 +1,5 @@
+import { registerHttpRuntimeTests } from "../../test-support/http-runtime.mjs";
+import { createChallengeServer } from "./server.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -10,7 +12,7 @@ import {
   renderAssignmentList,
 } from "./server.js";
 
-const GLOBAL_HEADER_MARKUP = '<header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 서비스</span></a><a class="campusGlobalHomeLink" href="/hub">전체 서비스</a></div></header>';
+const GLOBAL_HEADER_MARKUP = '<header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 CTF</span></a><a class="campusGlobalHomeLink" href="/">문제 목록</a></div></header>';
 
 function assertCampusGlobalHeader(html: string, localHeader = '<header class="serviceHeader">'): void {
   assert(html.includes(GLOBAL_HEADER_MARKUP));
@@ -62,13 +64,15 @@ test("challenge-03 list shows only the demo user's submissions", () => {
   assert(html.includes("프로그래밍 기초 과제 1"));
   assert(html.includes("웹프로그래밍 보고서"));
   assert.equal(html.includes("자료구조 실습 보고서"), false);
-  assert(html.includes("/student/assignments/view?id=1"));
+  assert(html.includes("/challenges/03/view?id=1"));
   assert.equal(html.includes("KDUCTF" + "{"), false);
 });
 
 test("challenge-03 detail intentionally renders any submission id without ownership check", () => {
   const flag = "KDUCTF" + "{current_user_flag_03}";
   const rows = buildAssignmentRows(flag);
+  assert(rows[3]);
+  assert(rows[2]);
 
   const privateRow = renderAssignmentDetail(rows[3]);
   assert(privateRow.includes("비공개 과제 검토"));
@@ -83,7 +87,9 @@ test("challenge-03 detail intentionally renders any submission id without owners
 test("challenge-03 flag material never leaks into another user's rows", () => {
   const currentFlag = "KDUCTF" + "{current_user_flag_03}";
   const otherFlag = "KDUCTF" + "{other_user_flag_03}";
-  const html = renderAssignmentDetail(buildAssignmentRows(currentFlag)[3]);
+  const row = buildAssignmentRows(currentFlag)[3];
+  assert(row);
+  const html = renderAssignmentDetail(row);
 
   assert(html.includes(currentFlag));
   assert.equal(html.includes(otherFlag), false);
@@ -94,3 +100,5 @@ test("challenge-03 list, detail, and error pages include the global campus heade
   assertCampusGlobalHeader(renderAssignmentDetail({ id: 1, title: "과제", owner: "student01", status: "제출 완료" }));
   assertCampusGlobalHeader(renderErrorPage("요청을 처리하지 못했습니다."), "");
 });
+
+registerHttpRuntimeTests({ createServer: createChallengeServer, challengeId: "03" });

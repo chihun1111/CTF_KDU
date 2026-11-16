@@ -46,8 +46,8 @@ export const ONLINE_COUNT_FALLBACK_STORE = Symbol("ONLINE_COUNT_FALLBACK_STORE")
     },
     {
       provide: OnlineCountService,
-      inject: [PRESENCE_STORE, ONLINE_COUNT_FALLBACK_STORE],
-      useFactory: (presenceStore: OnlineCountPresenceStore, fallbackStore: OnlineCountFallbackStore) =>
+      inject: [RedisPresenceStore, ONLINE_COUNT_FALLBACK_STORE],
+      useFactory: (presenceStore: OnlineCountPresenceStore | null, fallbackStore: OnlineCountFallbackStore) =>
         new OnlineCountService(presenceStore, fallbackStore),
     },
     {

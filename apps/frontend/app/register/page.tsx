@@ -6,7 +6,7 @@ import { getCurrentSession } from "../lib/server-api";
 export default async function RegisterPage() {
   const session = await getCurrentSession();
   if (session.authenticated) {
-    redirect("/hub");
+    redirect(session.role === "admin" ? "/admin/operations" : "/");
   }
 
   return (
@@ -19,6 +19,7 @@ export default async function RegisterPage() {
       <AuthForm mode="register" />
       <p className="authSwitch">
         이미 계정이 있다면 <Link href="/login">로그인</Link>
+        <span className="authMainLink"><Link href="/">메인으로 돌아가기</Link></span>
       </p>
     </main>
   );

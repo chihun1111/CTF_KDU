@@ -59,3 +59,19 @@ test("verify-sensitive-artifacts rejects forbidden frontend and runtime material
   assert.match(result.output, /raw admin identity or legacy metric field/);
   assert.match(result.output, /query identity material/);
 });
+
+test("verify-sensitive-artifacts allows only the exact public ellipsis example after constant folding", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "campus-ctf-sensitive-"));
+  writeFixtureFile(root, "apps/frontend/.next/static/chunk.js", "const example = 'KDUCTF{...}';\n");
+  assert.equal(runVerifier(root).status, 0);
+});
+
+test("an allowed example cannot hide an adjacent real-shaped flag or a longer payload", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "campus-ctf-sensitive-"));
+  for (const body of ["KDUCTF{...} KDUCTF{leak}", "KDUCTF{...suffix}", "KDUCTF{....}"]) {
+    writeFixtureFile(root, "apps/frontend/.next/static/chunk.js", body);
+    const result = runVerifier(root);
+    assert.notEqual(result.status, 0);
+    assert.match(result.output, /flag literal/);
+  }
+});

@@ -2,3 +2,15 @@ packages:
   - "apps/*"
   - "packages/*"
   - "challenge-services/*"
+
+# Only these native build tools need dependency install scripts.
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+ignoredBuiltDependencies:
+  - '@nestjs/core'
+
+# drizzle-kit still pulls the retired esbuild-kit loader with esbuild 0.18.
+# Keep its transform API while applying the GHSA-67mh-4wv8-2f99 fix.
+overrides:
+  '@esbuild-kit/core-utils>esbuild': '0.25.12'

@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, Req, Res, UseGuards } from "@nestjs/common";
+import { BadRequestException, Controller, Get, Inject, Query, Req, Res, UseGuards } from "@nestjs/common";
 import { AuditService, type AdminReadAuditInput } from "../audit/audit.service.js";
 import { AdminRoleGuard } from "../auth/admin-role.guard.js";
 import { AuthenticatedRequest, SessionAuthGuard } from "../auth/session-auth.guard.js";
@@ -27,6 +27,14 @@ type HeaderWriter = {
   setHeader(name: string, value: string): void;
 };
 
+function readPage(value: unknown): number {
+  if (value === undefined) return 1;
+  if (typeof value !== "string" || !/^[1-9]\d{0,5}$/.test(value) || Number(value) > 100_000) {
+    throw new BadRequestException("Invalid page");
+  }
+  return Number(value);
+}
+
 @Controller("api/admin")
 export class AdminReadController {
   constructor(
@@ -39,10 +47,12 @@ export class AdminReadController {
   async participants(
     @Req() request: AuthenticatedRequest,
     @Res({ passthrough: true }) response: HeaderWriter,
+    @Query("page") pageInput?: string,
   ): Promise<AdminListResponse<AdminParticipantListItem>> {
     this.noStore(response);
-    await this.recordAdminRead(request, "participants");
-    return this.adminReader.listParticipants();
+    const page = readPage(pageInput);
+    await this.recordAdminRead(request, "participants", page);
+    return this.adminReader.listParticipants(page, 50);
   }
 
   @Get("submissions")
@@ -50,10 +60,12 @@ export class AdminReadController {
   async submissions(
     @Req() request: AuthenticatedRequest,
     @Res({ passthrough: true }) response: HeaderWriter,
+    @Query("page") pageInput?: string,
   ): Promise<AdminListResponse<AdminSubmissionListItem>> {
     this.noStore(response);
-    await this.recordAdminRead(request, "submissions");
-    return this.adminReader.listSubmissions();
+    const page = readPage(pageInput);
+    await this.recordAdminRead(request, "submissions", page);
+    return this.adminReader.listSubmissions(page, 50);
   }
 
   @Get("clears")
@@ -61,10 +73,12 @@ export class AdminReadController {
   async clears(
     @Req() request: AuthenticatedRequest,
     @Res({ passthrough: true }) response: HeaderWriter,
+    @Query("page") pageInput?: string,
   ): Promise<AdminListResponse<AdminClearListItem>> {
     this.noStore(response);
-    await this.recordAdminRead(request, "clears");
-    return this.adminReader.listClears();
+    const page = readPage(pageInput);
+    await this.recordAdminRead(request, "clears", page);
+    return this.adminReader.listClears(page, 50);
   }
 
   @Get("challenges/status")
@@ -94,10 +108,12 @@ export class AdminReadController {
   async auditLogs(
     @Req() request: AuthenticatedRequest,
     @Res({ passthrough: true }) response: HeaderWriter,
+    @Query("page") pageInput?: string,
   ): Promise<AdminListResponse<AdminAuditLogItem>> {
     this.noStore(response);
-    await this.recordAdminRead(request, "audit-logs");
-    return this.adminReader.listAuditLogs(1, 50);
+    const page = readPage(pageInput);
+    await this.recordAdminRead(request, "audit-logs", page);
+    return this.adminReader.listAuditLogs(page, 50);
   }
 
   private noStore(response: HeaderWriter): void {
@@ -107,11 +123,12 @@ export class AdminReadController {
   private recordAdminRead(
     request: AuthenticatedRequest,
     resource: AdminReadAuditInput["resource"],
+    page = 1,
   ): Promise<void> {
     const input = {
       adminUserId: request.authSession.userId,
       resource,
-      page: 1,
+      page,
       pageSize: 50,
     };
     return this.auditRecorder.recordAdminRead(input);

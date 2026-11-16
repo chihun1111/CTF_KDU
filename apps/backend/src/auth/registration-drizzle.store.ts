@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { ConflictException } from "@nestjs/common";
 import {
   challengeFlags,
   challenges,
@@ -45,7 +46,17 @@ export class RegistrationDrizzleStore implements RegistrationStore {
   constructor(private readonly database: DatabaseClientLike) {}
 
   async transaction<T>(callback: (tx: RegistrationTransaction) => Promise<T>): Promise<T> {
-    return this.database.db.transaction((tx) => callback(new RegistrationDrizzleTransaction(tx)));
+    try {
+      return await this.database.db.transaction((tx) => callback(new RegistrationDrizzleTransaction(tx)));
+    } catch (error) {
+      // A pre-insert read cannot exclude two concurrent registrations of the same ID.
+      const databaseError = error as { code?: unknown; constraint?: unknown; cause?: { code?: unknown; constraint?: unknown } };
+      const violation = databaseError?.cause ?? databaseError;
+      if (violation?.code === "23505" && violation.constraint === "users_student_id_hash_key") {
+        throw new ConflictException("Registration failed");
+      }
+      throw error;
+    }
   }
 }
 

@@ -4,7 +4,7 @@ import { AuthLoginService } from "./auth-login.service.js";
 import { AuthLogoutService } from "./auth-logout.service.js";
 import { AuthRateLimiterService } from "./auth-rate-limiter.service.js";
 import { AuthRegistrationService } from "./auth-registration.service.js";
-import { LoginRequestDto, RegisterRequestDto } from "./dto/auth.dto.js";
+import { LoginRequestDto, RegisterRequestDto, parseLoginRequest, parseRegisterRequest } from "./dto/auth.dto.js";
 import { SessionAuthService } from "./session-auth.service.js";
 
 type HeaderWriter = {
@@ -42,6 +42,7 @@ export class AuthController {
     @Req() request: RequestMetadata = {},
     @Headers("user-agent") userAgent: string | undefined,
   ) {
+    input = parseRegisterRequest(input);
     const ipHash = this.requestHasher.requestMetadataHash(this.clientIp(request));
     await this.rateLimiter.checkRegister(ipHash);
     const result = await this.registration.register({
@@ -60,6 +61,7 @@ export class AuthController {
     @Res({ passthrough: true }) response: HeaderWriter,
     @Req() request: RequestMetadata = {},
   ) {
+    input = parseLoginRequest(input);
     await this.rateLimiter.checkLogin(
       this.requestHasher.requestMetadataHash(this.clientIp(request)),
       this.requestHasher.studentIdHash(input.studentId),

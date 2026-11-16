@@ -46,7 +46,8 @@ function isBase64Aes256(value) {
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
     return false;
   }
-  return Buffer.from(value, "base64").byteLength === 32;
+  const decoded = Buffer.from(value, "base64");
+  return decoded.byteLength === 32 && decoded.toString("base64") === value;
 }
 
 function isOwnerOnlyMode(mode) {
@@ -61,6 +62,7 @@ if (!existsSync(secretDir)) {
   failures.push(`Runtime secret path is not a directory: ${path.relative(root, secretDir)}`);
 }
 
+const usedValues = new Set();
 for (const { file, kind } of SECRET_FILES) {
   const filePath = path.join(secretDir, file);
   if (!existsSync(filePath)) {
@@ -76,6 +78,10 @@ for (const { file, kind } of SECRET_FILES) {
     failures.push(`Runtime secret must not be group/world-readable: ${file}`);
   }
   const value = readFileSync(filePath, "utf8").trim();
+  if (value && usedValues.has(value)) {
+    failures.push(`Runtime secret must be unique: ${file}`);
+  }
+  usedValues.add(value);
   if (kind === "aes" && !isBase64Aes256(value)) {
     failures.push(`Runtime secret must be a base64-encoded 32-byte AES key: ${file}`);
   }

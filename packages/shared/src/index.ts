@@ -1,5 +1,8 @@
 export type FlagId = `FLAG-0${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`;
 
+export { PUBLIC_CHALLENGE_CATALOG } from "./challenge-catalog.js";
+export type { ChallengeDifficulty, ChallengeDifficultyLevel, PublicService } from "./challenge-catalog.js";
+
 export const FLAG_IDS = [
   "FLAG-01",
   "FLAG-02",

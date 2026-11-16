@@ -9,14 +9,14 @@ const repoRoot = path.resolve(import.meta.dirname, "..");
 const verifierPath = path.join(repoRoot, "scripts/verify-workspace.mjs");
 const challengeIds = Array.from({ length: 8 }, (_, index) => String(index + 1).padStart(2, "0"));
 const servicePaths = [
-  "/campus/festival/",
-  "/system/status/",
-  "/student/assignments/",
-  "/clubs/admin/",
-  "/clubs/security/",
-  "/clubs/build-archive/",
-  "/community/board/",
-  "/bonus/vault/",
+  "/challenges/01/",
+  "/challenges/02/",
+  "/challenges/03/",
+  "/challenges/04/",
+  "/challenges/05/",
+  "/challenges/06/",
+  "/challenges/07/",
+  "/challenges/08/",
 ];
 
 function writeFixtureFile(root, filePath, contents = "") {
@@ -62,7 +62,7 @@ function createBaseWorkspace() {
   writeFixtureFile(root, "scripts/runtime-smoke.mjs", "");
   writeFixtureFile(
     root,
-    "Docs/development/operations/04-secret-rotation.md",
+    "docs/operations.md",
     [
       "SESSION_SECRET",
       "CLEAR_VIEW_TOKEN_SECRET",

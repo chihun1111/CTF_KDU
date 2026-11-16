@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ConflictException } from "@nestjs/common";
+import { ConflictException, ServiceUnavailableException } from "@nestjs/common";
 import { FLAG_IDS } from "@campus-ctf/shared";
 import type { EncryptedStorageValue } from "../crypto/crypto.service.js";
 import { AuthRegistrationService, type RegistrationStore } from "./auth-registration.service.js";
@@ -17,7 +17,7 @@ const encryptedValue: EncryptedStorageValue = {
   },
 };
 
-function createStore(events: string[], existingUser = false): RegistrationStore {
+function createStore(events: string[], existingUser = false, seeded = true): RegistrationStore {
   return {
     async transaction(callback) {
       events.push("transaction:start");
@@ -37,6 +37,7 @@ function createStore(events: string[], existingUser = false): RegistrationStore 
         },
         async listActiveChallenges() {
           events.push("list-challenges");
+          if (!seeded) return [];
           return FLAG_IDS.map((flagId, index) => ({
             id: `challenge-${index + 1}`,
             flagId,
@@ -107,6 +108,24 @@ test("AuthRegistrationService creates user, consent, 8 flags, and session withou
     "session:user-1:hash:opaque-session-token",
     "transaction:end",
   ]);
+});
+
+test("registration cannot create an unusable account when challenge metadata has not been seeded", async () => {
+  const events: string[] = [];
+  const service = new AuthRegistrationService(
+    createStore(events, false, false),
+    { prepareStudentIdForStorage: () => encryptedValue, generateOpaqueToken: () => "token", sessionHash: () => "hash" },
+    { hashPassword: async () => "hash" },
+    { issueChallengeFlagsForUser: () => { throw new Error("must not issue incomplete flags"); } },
+    { buildSessionCookie: () => { throw new Error("must not create a session"); } },
+  );
+  await assert.rejects(() => service.register({
+    input: { studentId: "2622022", password: "valid-password", consent: { consentVersion: "v1", requiredLoggingAccepted: true, cookieAccepted: true } },
+    ipHash: "ip",
+    userAgentHash: "ua",
+  }), ServiceUnavailableException);
+  assert.equal(events.includes("transaction:end"), false);
+  assert.equal(events.some((event) => event.startsWith("session:")), false);
 });
 
 test("AuthRegistrationService rejects duplicate student id without creating downstream records", async () => {

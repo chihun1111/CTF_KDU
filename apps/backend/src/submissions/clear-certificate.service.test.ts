@@ -70,4 +70,5 @@ test("ClearCertificateService rejects missing, consumed, expired, or foreign cle
 
   await assert.rejects(() => service.consume("user-1", "ctf_session=session-token"), ForbiddenException);
   await assert.rejects(() => service.consume("user-1", "ctf_clear_once=wrong"), ForbiddenException);
+  await assert.rejects(() => service.consume("user-1", "ctf_clear_once=%broken"), ForbiddenException);
 });

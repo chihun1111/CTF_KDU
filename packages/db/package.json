@@ -13,17 +13,16 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "generate": "drizzle-kit generate --dialect postgresql --schema src/schema.ts --out drizzle",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test dist/*.test.js || true"
+    "generate": "drizzle-kit generate --dialect postgresql --schema src/schema.ts --out drizzle-drafts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "drizzle-orm": "^0.45.0"
+    "drizzle-orm": "^0.45.4"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "drizzle-kit": "^0.31.0",
-    "tsx": "^4.20.0",
-    "typescript": "^5.9.0"
+    "@types/node": "^24.19.2",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
   }
 }

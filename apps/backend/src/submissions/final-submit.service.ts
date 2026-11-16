@@ -1,5 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 import type { CryptoService } from "../crypto/crypto.service.js";
+import type { FinalSubmitAuditInput } from "../audit/audit.service.js";
 
 export const FINAL_FLAG_IDS = [
   "FLAG-01",
@@ -49,6 +50,7 @@ export type FinalSubmitTransaction = {
     tokenHash: string;
     expiresAt: Date;
   }): Promise<void>;
+  recordFinalSubmitAudit(input: FinalSubmitAuditInput): Promise<void>;
 };
 
 export type FinalSubmitStore = {
@@ -62,16 +64,6 @@ type FinalSubmitCrypto = Pick<
 
 type ClearCookieBuilder = {
   buildClearCookie(clearToken: string, maxAgeSeconds: number): string;
-};
-
-export type FinalSubmitAuditRecorder = {
-  recordFinalSubmit(input: {
-    userId: string;
-    correctCount: number;
-    requiredCount: number;
-    submittedCount: number;
-    cleared: boolean;
-  }): Promise<void>;
 };
 
 type FinalSubmitBody = {
@@ -97,7 +89,6 @@ export class FinalSubmitService {
     private readonly store: FinalSubmitStore,
     private readonly crypto: FinalSubmitCrypto,
     private readonly clearCookie: ClearCookieBuilder,
-    private readonly auditRecorder?: FinalSubmitAuditRecorder,
   ) {}
 
   async submit(userId: string, input: FinalSubmitInput): Promise<{ body: FinalSubmitBody; setCookie?: string }> {
@@ -172,6 +163,13 @@ export class FinalSubmitService {
         userId,
         results,
       });
+      await tx.recordFinalSubmitAudit({
+        userId,
+        correctCount,
+        requiredCount: FINAL_FLAG_IDS.length,
+        submittedCount,
+        cleared: isClear,
+      });
 
       const body: FinalSubmitBody = {
         cleared: isClear,
@@ -211,19 +209,12 @@ export class FinalSubmitService {
       };
     });
 
-    await this.auditRecorder?.recordFinalSubmit({
-      userId,
-      correctCount: result.body.correctCount,
-      requiredCount: FINAL_FLAG_IDS.length,
-      submittedCount,
-      cleared: result.body.cleared,
-    });
-
     return result;
   }
 
   private parseFlags(input: FinalSubmitInput): Partial<Record<FinalFlagId, string>> {
-    if (!input.flagsByFlagId || typeof input.flagsByFlagId !== "object") {
+    if (!input || typeof input !== "object" || Array.isArray(input) ||
+      !input.flagsByFlagId || typeof input.flagsByFlagId !== "object" || Array.isArray(input.flagsByFlagId)) {
       throw new BadRequestException("Invalid final submission");
     }
 

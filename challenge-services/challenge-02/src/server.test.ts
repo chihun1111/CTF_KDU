@@ -1,3 +1,5 @@
+import { registerHttpRuntimeTests } from "../../test-support/http-runtime.mjs";
+import { createChallengeServer } from "./server.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -10,7 +12,7 @@ import {
   renderStatusScript,
 } from "./server.js";
 
-const GLOBAL_HEADER_MARKUP = '<header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 서비스</span></a><a class="campusGlobalHomeLink" href="/hub">전체 서비스</a></div></header>';
+const GLOBAL_HEADER_MARKUP = '<header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 CTF</span></a><a class="campusGlobalHomeLink" href="/">문제 목록</a></div></header>';
 
 function assertCampusGlobalHeader(html: string): void {
   assert(html.includes(GLOBAL_HEADER_MARKUP));
@@ -57,7 +59,7 @@ test("challenge-02 builds a current-session flag request without URL identity", 
 test("challenge-02 robots.txt advertises the debug endpoint without flag material", () => {
   const robots = buildRobotsTxt();
 
-  assert(robots.includes("Disallow: /system/status/api/debug"));
+  assert(robots.includes("Disallow: /challenges/02/api/debug"));
   assert.equal(robots.includes("Disallow: /api/debug"), false);
   assert.equal(robots.includes("KDUCTF" + "{"), false);
   assert.equal(robots.includes("FLAG-02"), false);
@@ -90,11 +92,13 @@ test("challenge-02 page and script expose no flag or debug route", () => {
   assert.equal(page.includes('src="/assets/status.js"'), false);
   assert.equal(script.includes("api/debug"), false);
   assert.equal(script.includes("KDUCTF" + "{"), false);
-  assert(page.includes("/system/status/assets/status.js"));
-  assert(script.includes("/system/status/api/status"));
+  assert(page.includes("/challenges/02/assets/status.js"));
+  assert(script.includes("/challenges/02/api/status"));
   assert.equal(script.includes('fetch("/api/status")'), false);
 });
 
 test("challenge-02 status page includes the global campus header above the local service header", () => {
   assertCampusGlobalHeader(renderStatusPage());
 });
+
+registerHttpRuntimeTests({ createServer: createChallengeServer, challengeId: "02", protectedPath: "/api/status" });

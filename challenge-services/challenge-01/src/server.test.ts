@@ -1,8 +1,10 @@
+import { registerHttpRuntimeTests } from "../../test-support/http-runtime.mjs";
+import { createChallengeServer } from "./server.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildFlagBackendRequest, readInternalServiceToken, renderFestivalPage } from "./server.js";
 
-const GLOBAL_HEADER_MARKUP = '<header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 서비스</span></a><a class="campusGlobalHomeLink" href="/hub">전체 서비스</a></div></header>';
+const GLOBAL_HEADER_MARKUP = '<header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 CTF</span></a><a class="campusGlobalHomeLink" href="/">문제 목록</a></div></header>';
 
 function assertCampusGlobalHeader(html: string): void {
   assert(html.includes(GLOBAL_HEADER_MARKUP));
@@ -68,3 +70,5 @@ test("challenge-01 page keeps decoy comments that contain no flag material", () 
   assert(html.includes("초안 문구는 내부 검토 후 공개됩니다."));
   assert.equal(html.includes("FLAG-01"), false);
 });
+
+registerHttpRuntimeTests({ createServer: createChallengeServer, challengeId: "01" });

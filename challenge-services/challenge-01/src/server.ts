@@ -6,11 +6,19 @@ const serviceId = "service-01";
 const serviceName = "2026 교내 미니 축제 안내";
 const unitName = "축제기획단";
 const challengeId = "01";
+// Runtime smoke verifies this display metadata against the shared public catalog.
+const challengeDifficulty = "입문";
+const challengeDifficultyLevel = 1;
+const CHALLENGE_CONTEXT = `<div class="challengeContext" aria-label="문제 정보"><span class="challengeNumber">문제 ${challengeId}</span><span class="difficultyBadge" data-level="${challengeDifficultyLevel}">난이도: ${challengeDifficulty}</span></div>`;
 
 const SERVICE_PAGE_STYLE = `
       :root { color-scheme: light; --bg: #f8fafc; --surface: #ffffff; --surface-muted: #f4f3f8; --text: #1a1c1f; --muted: #515f74; --border: #e2e8f0; --accent: #003366; --accent-strong: #001e40; --success: #166534; --warning: #92400e; }
       * { box-sizing: border-box; }
       body { margin: 0; background: var(--bg); color: var(--text); font-family: "Pretendard", "Noto Sans KR", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; line-height: 1.5; }
+      .challengeContext { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; grid-column: 1 / -1; margin: 0 0 16px; }
+      .challengeNumber { color: var(--accent); font-size: .86rem; font-weight: 800; white-space: nowrap; }
+      .difficultyBadge { display: inline-flex; align-items: center; min-height: 28px; border: 1px solid currentColor; border-radius: 999px; padding: 2px 10px; font-size: .82rem; font-weight: 800; white-space: nowrap; }
+      .difficultyBadge[data-level="1"] { color: #166534; background: #f0fdf4; }
       .campusGlobalHeader {
         border-bottom: 1px solid #e2e8f0;
         background: #ffffff;
@@ -110,6 +118,8 @@ const SERVICE_PAGE_STYLE = `
       @media (max-width: 760px) { .festivalGrid { grid-template-columns: 1fr; } .boothGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .scheduleRow { grid-template-columns: 76px 1fr; } .scheduleRow > span { grid-column: 2; } .serviceShell, .serviceNavInner { width: min(100% - 32px, 1280px); } }
 `;
 
+class UpstreamUnavailableError extends Error {}
+
 type Env = Record<string, string | undefined>;
 type SecretFileReader = (path: string) => Promise<string | Buffer>;
 type FlagResponse = {
@@ -152,27 +162,34 @@ export function buildFlagBackendRequest(input: {
   return { url: url.toString(), headers };
 }
 
-async function fetchCurrentUserFlag(cookieHeader: string | undefined): Promise<string | null> {
+async function fetchCurrentUserFlag(cookieHeader: string | undefined, signal?: AbortSignal): Promise<string | null> {
+  if (!cookieHeader || !/(?:^|;)\s*ctf_session=[^;\s]+/.test(cookieHeader)) return null;
   const serviceToken = await readInternalServiceToken();
-  if (!serviceToken) {
-    return null;
-  }
-
-  const backendRequest = buildFlagBackendRequest({
-    backendInternalUrl: process.env.BACKEND_INTERNAL_URL,
-    cookieHeader,
-    serviceToken,
-  });
+  if (!serviceToken) throw new UpstreamUnavailableError("Service authentication is unavailable");
 
   try {
-    const response = await fetch(backendRequest.url, { headers: backendRequest.headers });
+    const backendRequest = buildFlagBackendRequest({
+      backendInternalUrl: process.env.BACKEND_INTERNAL_URL,
+      cookieHeader,
+      serviceToken,
+    });
+    const response = await fetch(backendRequest.url, {
+      headers: backendRequest.headers,
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5_000)]) : AbortSignal.timeout(5_000),
+      redirect: "error",
+    });
     if (!response.ok) {
-      return null;
+      await response.body?.cancel();
+      if (response.status === 401 || response.status === 403) return null;
+      throw new UpstreamUnavailableError("Flag service is unavailable");
     }
     const body = (await response.json()) as FlagResponse;
-    return body.flagId === "FLAG-01" && typeof body.flag === "string" ? body.flag : null;
+    if (body?.flagId !== "FLAG-01" || typeof body.flag !== "string") {
+      throw new UpstreamUnavailableError("Invalid flag service response");
+    }
+    return body.flag;
   } catch {
-    return null;
+    throw new UpstreamUnavailableError("Flag service is unavailable");
   }
 }
 
@@ -187,7 +204,7 @@ export function renderFestivalPage(flag: string): string {
   </head>
   <body>
     <div class="pageFrame">
-      <header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 서비스</span></a><a class="campusGlobalHomeLink" href="/hub">전체 서비스</a></div></header>
+      <header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 CTF</span></a><a class="campusGlobalHomeLink" href="/">문제 목록</a></div></header>
       <nav class="serviceNav" aria-label="서비스 메뉴">
         <div class="serviceNavInner">
           <span class="serviceBrand">${unitName}</span>
@@ -195,6 +212,7 @@ export function renderFestivalPage(flag: string): string {
         </div>
       </nav>
       <main class="serviceShell">
+        ${CHALLENGE_CONTEXT}
         <header class="serviceHeader">
           <p class="unit">${unitName}</p>
           <h1>${serviceName}</h1>
@@ -242,12 +260,49 @@ export function renderFestivalPage(flag: string): string {
 
 export function createChallengeServer() {
   return createServer((request, response) => {
-    void handleRequest(request, response);
+    const cancellation = new AbortController();
+    const abortDisconnectedRequest = () => {
+      if (!response.writableFinished) cancellation.abort();
+    };
+    request.once("aborted", abortDisconnectedRequest);
+    response.once("close", abortDisconnectedRequest);
+    void handleRequest(request, response, cancellation.signal).catch((error: unknown) => {
+      // Do not let a filesystem, upstream, or parsing failure terminate the service.
+      if (response.destroyed || response.writableEnded) return;
+      if (response.headersSent) {
+        response.destroy();
+        return;
+      }
+      response.writeHead(error instanceof UpstreamUnavailableError ? 503 : 500, {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      response.end("요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.\n");
+    }).finally(() => {
+      request.off("aborted", abortDisconnectedRequest);
+      response.off("close", abortDisconnectedRequest);
+    });
   });
 }
 
-async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  const url = new URL(request.url ?? "/", "http://localhost");
+async function handleRequest(request: IncomingMessage, response: ServerResponse, signal: AbortSignal): Promise<void> {
+  let url: URL;
+  try {
+    url = new URL(request.url ?? "/", "http://localhost");
+  } catch {
+    response.writeHead(400, {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    response.end("잘못된 요청입니다.\n");
+    return;
+  }
+  const allowedMethod = "GET";
+  if (request.method !== allowedMethod) {
+    response.writeHead(405, { allow: allowedMethod, "cache-control": "no-store" });
+    response.end();
+    return;
+  }
 
   if (url.pathname === "/health") {
     response.writeHead(200, {
@@ -259,7 +314,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
 
   if (url.pathname === "/") {
-    const flag = await fetchCurrentUserFlag(request.headers.cookie);
+    const flag = await fetchCurrentUserFlag(request.headers.cookie, signal);
     if (!flag) {
       response.writeHead(401, {
         "content-type": "text/plain; charset=utf-8",

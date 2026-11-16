@@ -56,10 +56,10 @@ function requireGlobalHeader(filePath, label) {
   if (!source.includes("KDU")) {
     failures.push(`${label} must include the KDU brand mark`);
   }
-  if (!source.includes("교내 서비스")) {
+  if (!source.includes("교내 CTF")) {
     failures.push(`${label} must include the campus service brand text`);
   }
-  if (!source.includes("전체 서비스")) {
+  if (!source.includes("문제 목록")) {
     failures.push(`${label} must include the all-services link text`);
   }
 
@@ -68,12 +68,12 @@ function requireGlobalHeader(filePath, label) {
     const tag = match[0];
     return (
       /(?:class|className)=["']campusGlobalBrand["']/.test(tag) &&
-      /href=["']\/hub["']/.test(tag) &&
+      /href=["']\/["']/.test(tag) &&
       /aria-label=["'][^"']+["']/.test(tag)
     );
   });
   if (!brandTag) {
-    failures.push(`${label} must expose an aria-labelled campusGlobalBrand link to /hub`);
+    failures.push(`${label} must expose an aria-labelled campusGlobalBrand link to /`);
   } else {
     const brandStart = brandTag.index ?? 0;
     const closingTag = brandTag[0].startsWith("<Link") ? "</Link>" : "</a>";
@@ -82,24 +82,24 @@ function requireGlobalHeader(filePath, label) {
     if (!/campusGlobalBrandMark[\s\S]*KDU/.test(brandMarkup)) {
       failures.push(`${label} must put KDU inside campusGlobalBrandMark`);
     }
-    if (!/campusGlobalBrandText[\s\S]*교내 서비스/.test(brandMarkup)) {
-      failures.push(`${label} must put 교내 서비스 inside campusGlobalBrandText`);
+    if (!/campusGlobalBrandText[\s\S]*교내 CTF/.test(brandMarkup)) {
+      failures.push(`${label} must put 교내 CTF inside campusGlobalBrandText`);
     }
   }
 
   const homeTag = openingTags.find((match) => {
     const tag = match[0];
-    return /(?:class|className)=["']campusGlobalHomeLink["']/.test(tag) && /href=["']\/hub["']/.test(tag);
+    return /(?:class|className)=["']campusGlobalHomeLink["']/.test(tag) && /href=["']\/["']/.test(tag);
   });
   if (!homeTag) {
-    failures.push(`${label} must expose campusGlobalHomeLink to /hub`);
+    failures.push(`${label} must expose campusGlobalHomeLink to /`);
   } else {
     const homeStart = homeTag.index ?? 0;
     const closingTag = homeTag[0].startsWith("<Link") ? "</Link>" : "</a>";
     const homeEnd = source.indexOf(closingTag, homeStart);
     const homeMarkup = source.slice(homeStart, homeEnd < 0 ? source.length : homeEnd);
-    if (!homeMarkup.includes("전체 서비스")) {
-      failures.push(`${label} campusGlobalHomeLink must say 전체 서비스`);
+    if (!homeMarkup.includes("문제 목록")) {
+      failures.push(`${label} campusGlobalHomeLink must say 문제 목록`);
     }
   }
 }
@@ -142,7 +142,7 @@ requireText("apps/frontend/app/components/auth-form.tsx", 'placeholder="7자리 
 forbidText("apps/frontend/app/components/auth-form.tsx", 'placeholder="2622022"', "auth raw sample student id");
 requireText("apps/frontend/app/components/final-submit-form.tsx", 'const flagPrefix = "KDUCTF"', "final submit form");
 requireText("apps/frontend/app/components/final-submit-form.tsx", 'const flagExampleSuffix = "{...}"', "final submit form");
-requireText("apps/frontend/app/components/final-submit-form.tsx", "new RegExp", "final submit form validation");
+requireText("apps/frontend/app/lib/submission-validation.ts", "new RegExp", "final submit form validation");
 requireText("apps/frontend/app/components/final-submit-form.tsx", "submittedEntries", "final submit partial verification");
 requireText("apps/frontend/app/components/final-submit-form.tsx", "한 개 이상", "final submit partial verification copy");
 requireText("apps/frontend/app/lib/client-api.ts", "/api/auth/me", "auth form role-aware redirect");
@@ -153,11 +153,11 @@ requireText("apps/frontend/app/clear/preview/page.tsx", "ClearPreviewPage", "cle
 requireText("apps/frontend/app/clear/preview/page.tsx", "실제 인증에서만 표시", "clear preview privacy placeholder");
 forbidText("apps/frontend/app/clear/preview/page.tsx", "2622022", "clear preview raw sample student id");
 requireText("apps/frontend/app/clear/preview/page.tsx", "session.role !== \"admin\"", "clear preview admin guard");
-requireText("apps/frontend/app/hub/page.tsx", "portalHero", "participant hub service directory");
-requireText("apps/frontend/app/hub/page.tsx", "serviceDirectory", "participant hub service directory");
+requireText("apps/frontend/app/page.tsx", "portalHero", "participant hub service directory");
+requireText("apps/frontend/app/page.tsx", "serviceDirectory", "participant hub service directory");
 requireGlobalHeader("apps/frontend/app/components/campus-global-header.tsx", "frontend global header component");
 for (const participantHeaderPage of [
-  "apps/frontend/app/hub/page.tsx",
+  "apps/frontend/app/page.tsx",
   "apps/frontend/app/hints/page.tsx",
   "apps/frontend/app/submit/page.tsx",
 ]) {
@@ -170,7 +170,7 @@ requireText(
   "participant service card direct navigation",
 );
 for (const participantServiceNavigationFile of [
-  "apps/frontend/app/hub/page.tsx",
+  "apps/frontend/app/page.tsx",
   "apps/frontend/app/components/services/service-directory-grid.tsx",
   "apps/frontend/app/components/services/service-directory-card.tsx",
 ]) {
@@ -201,7 +201,7 @@ forbidText("apps/frontend/app/admin/operations/page.tsx", "#participant-logs-", 
 requireText("apps/frontend/app/admin/operations/page.tsx", "AdminOperationsAutoRefresh", "admin operations live refresh");
 requireText("apps/frontend/app/components/admin-operations-auto-refresh.tsx", "router.refresh()", "admin operations live refresh");
 requireText("apps/frontend/app/components/admin-operations-auto-refresh.tsx", "10_000", "admin operations live refresh interval");
-requireText("apps/frontend/app/globals.css", ".auditModal:target", "admin audit log popup styling");
+requireText("apps/frontend/app/globals.css", ".auditModal[open]", "admin audit log popup styling");
 // The compatibility route is redirect-only; its final challenge-service response carries the participant header.
 requireText("apps/frontend/app/services/[slug]/page.tsx", "getServiceHub", "service compatibility redirect");
 requireText(

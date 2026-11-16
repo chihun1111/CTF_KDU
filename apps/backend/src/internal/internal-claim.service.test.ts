@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { NotFoundException, UnauthorizedException } from "@nestjs/common";
-import { InternalClaimService, type InternalClaimStore } from "./internal-claim.service.js";
+import { InternalClaimService, type InternalClaimStore, type VerifyClaimBody } from "./internal-claim.service.js";
 
 function createStore(events: string[] = []): InternalClaimStore {
   return {
@@ -50,6 +50,7 @@ test("InternalClaimService verifies a user-bound claim token and returns only th
         };
       },
     },
+    { now: () => new Date("2026-05-10T00:00:00.000Z") },
   );
 
   const result = await service.verifyClaim({
@@ -68,8 +69,21 @@ test("InternalClaimService verifies a user-bound claim token and returns only th
   assert.equal(events.length, 1);
   assert.equal(events[0]?.includes("opaque-claim-token-with-at-least-32-bytes"), false);
   assert.equal(events[0]?.includes("claim-hash"), true);
+  assert.equal(events[0]?.includes("2026-05-10T00:00:00.000Z"), true);
   assert.equal(JSON.stringify(result).includes("user-1"), false);
   assert.equal(JSON.stringify(result).includes("session-1"), false);
+});
+
+test("malformed claim bodies cannot crash the handler or bypass service authentication", async () => {
+  const service = new InternalClaimService(
+    createStore(),
+    { claimTokenHash: () => "hash", decryptFlagForInternalApi: () => "unused", generateOpaqueToken: () => "token", internalServiceTokenMatches: () => false },
+    { async authenticateCookieHeader() { throw new Error("must authenticate service first"); } },
+  );
+  for (const body of [null, undefined, [], "bad"]) {
+    await assert.rejects(() => service.verifyClaim({ authorizationHeader: "Bearer invalid", cookieHeader: undefined, body: body as VerifyClaimBody }), UnauthorizedException);
+    await assert.rejects(() => service.issueClaim({ authorizationHeader: "Bearer invalid", cookieHeader: undefined, body: body as VerifyClaimBody }), UnauthorizedException);
+  }
 });
 
 test("InternalClaimService issues a user-bound FLAG-08 claim token without returning a flag", async () => {

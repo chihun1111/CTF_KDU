@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { RequestMethod } from "@nestjs/common";
+import { BadRequestException, RequestMethod } from "@nestjs/common";
 import { AdminRoleGuard } from "../auth/admin-role.guard.js";
 import { SessionAuthGuard } from "../auth/session-auth.guard.js";
 import { AdminReadController } from "./admin-read.controller.js";
@@ -85,6 +85,31 @@ test("AdminReadController exposes guarded participants with pseudonymous referen
   assert.equal(auditEvents[0]?.includes("ctf_session"), false);
 });
 
+test("admin collection pagination validates page numbers and records the viewed page", async () => {
+  const calls: unknown[] = [];
+  const pageReader = async (page = 1, pageSize = 50) => {
+    calls.push({ page, pageSize });
+    return { items: [], page, pageSize, totalCount: 120 };
+  };
+  const controller = new AdminReadController({
+    listParticipants: pageReader,
+    listSubmissions: pageReader,
+    listClears: pageReader,
+    listAuditLogs: pageReader,
+    async listChallengeStatus() { return []; },
+    async getSystemHealth() { throw new Error("unused"); },
+  }, { async recordAdminRead(input) { calls.push({ auditPage: input.page }); } });
+  const writer = { setHeader() {} };
+  for (const method of ["participants", "submissions", "clears", "auditLogs"] as const) {
+    assert.equal((await controller[method](adminRequest, writer, "2")).page, 2);
+    for (const invalid of ["0", "-1", "1.5", "1e2", "100001", "", "2 OR 1=1"]) {
+      await assert.rejects(() => controller[method](adminRequest, writer, invalid), BadRequestException);
+    }
+  }
+  assert.equal(calls.length, 8);
+  assert.deepEqual(calls.slice(0, 2), [{ auditPage: 2 }, { page: 2, pageSize: 50 }]);
+});
+
 test("AdminReadController exposes guarded submissions and clears without flag or session material", async () => {
   const controller = new AdminReadController({
     async listParticipants() {
@@ -165,7 +190,7 @@ test("AdminReadController exposes challenge status, system health, and aggregate
           challengeId: "01",
           flagId: "FLAG-01",
           title: "캠퍼스 축제 안내",
-          servicePath: "/campus/festival/",
+          servicePath: "/challenges/01/",
           health: "ok",
           visible: true,
           solvedCount: 0,

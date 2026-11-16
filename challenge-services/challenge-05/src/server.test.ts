@@ -1,3 +1,5 @@
+import { registerHttpRuntimeTests } from "../../test-support/http-runtime.mjs";
+import { createChallengeServer } from "./server.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -8,7 +10,7 @@ import {
 } from "./server.js";
 
 const GLOBAL_HEADER_MARKUP =
-  '<header class="campusGlobalHeader"> <div class="campusGlobalHeaderInner"> <a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"> <span class="campusGlobalBrandMark">KDU</span> <span class="campusGlobalBrandText">교내 서비스</span> </a> <a class="campusGlobalHomeLink" href="/hub">전체 서비스</a> </div> </header>';
+  '<header class="campusGlobalHeader"> <div class="campusGlobalHeaderInner"> <a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"> <span class="campusGlobalBrandMark">KDU</span> <span class="campusGlobalBrandText">교내 CTF</span> </a> <a class="campusGlobalHomeLink" href="/">문제 목록</a> </div> </header>';
 
 function assertGlobalHeader(html: string): void {
   const normalized = html.replace(/\s+/g, " ").trim();
@@ -53,20 +55,21 @@ test("challenge-05 page loads the bundle but never embeds flag material", () => 
   const html = renderPromoPage();
 
   assertGlobalHeader(html);
-  assert(html.includes("/clubs/security/assets/main.js"));
+  assert(html.includes("/challenges/05/assets/main.js"));
   assert.equal(html.includes('src="/assets/main.js"'), false);
   assert.equal(html.includes("KDUCTF" + "{"), false);
   assert.equal(html.includes("sourceMappingURL"), false);
   assert.equal(html.includes("FLAG-05"), false);
 });
 
-test("challenge-05 bundle keeps the deploy memo and points at the build archive map", () => {
+test("challenge-05 bundle keeps its own deploy memo without linking to another challenge", () => {
   const flag = "KDUCTF" + "{current_user_flag_05}";
   const otherFlag = "KDUCTF" + "{other_user_flag_05}";
   const script = renderMainScript(flag);
 
   assert(script.includes(`// BUILD NOTE(deploy): legacy banner id kept for rollback: ${flag}`));
-  assert(script.includes("//# sourceMappingURL=/clubs/build-archive/assets/main.js.map"));
-  assert(script.trimEnd().endsWith("//# sourceMappingURL=/clubs/build-archive/assets/main.js.map"));
+  assert.equal(script.includes("sourceMappingURL"), false);
   assert.equal(script.includes(otherFlag), false);
 });
+
+registerHttpRuntimeTests({ createServer: createChallengeServer, challengeId: "05" });

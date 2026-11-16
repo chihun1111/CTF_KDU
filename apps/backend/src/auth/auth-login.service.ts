@@ -1,5 +1,6 @@
 import { UnauthorizedException } from "@nestjs/common";
-import type { LoginRequestDto } from "./dto/auth.dto.js";
+import { parseLoginRequest, type LoginRequestDto } from "./dto/auth.dto.js";
+import { DUMMY_PASSWORD_HASH } from "./password-hash.service.js";
 
 const SESSION_MAX_AGE_SECONDS = 24 * 60 * 60;
 
@@ -47,8 +48,10 @@ export class AuthLoginService {
   ) {}
 
   async login(input: LoginRequestDto): Promise<LoginResult> {
+    input = parseLoginRequest(input);
     const user = await this.store.findLoginUserByStudentIdHash(this.crypto.studentIdHash(input.studentId));
-    if (!user || !(await this.passwordVerifier.verifyPassword(input.password, user.passwordHash))) {
+    const passwordMatches = await this.passwordVerifier.verifyPassword(input.password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
+    if (!user || !passwordMatches) {
       throw new UnauthorizedException("Login failed");
     }
 

@@ -14,7 +14,9 @@ const FRONTEND_SCAN_PATHS = [
 ];
 
 const FORBIDDEN_PATTERNS = [
-  { name: "flag literal", pattern: /KDUCTF\{/ },
+  // The submit UI deliberately shows the exact ellipsis example. Optimizers may
+  // fold its string fragments; all other flag-shaped prefixes remain forbidden.
+  { name: "flag literal", pattern: /KDUCTF\{(?!\.\.\.\})/ },
   { name: "student id encryption key name", pattern: /STUDENT_ID_ENCRYPTION_KEY/ },
   { name: "student id hash pepper name", pattern: /STUDENT_ID_HASH_PEPPER/ },
   { name: "flag encryption key name", pattern: /FLAG_ENCRYPTION_KEY/ },

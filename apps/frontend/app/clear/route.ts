@@ -2,8 +2,40 @@ import { NextRequest, NextResponse } from "next/server";
 import { consumeClearCertificate } from "../lib/server-api";
 import type { ClearCertificate } from "../lib/types";
 import { formatDateTime } from "../lib/types";
+import { isCertificateNavigation, isPrefetchRequest, noStoreHeaders, publicUrl } from "../lib/request-policy";
 
 export const dynamic = "force-dynamic";
+
+function isCertificate(value: unknown): value is ClearCertificate {
+  if (!value || typeof value !== "object") return false;
+  const data = value as Partial<ClearCertificate>;
+  return typeof data.studentId === "string" && data.studentId.length > 0
+    && typeof data.clearReceiptCode === "string" && data.clearReceiptCode.length > 0
+    && typeof data.message === "string"
+    && typeof data.clearedAt === "string" && Number.isFinite(Date.parse(data.clearedAt));
+}
+
+function htmlResponse(html: string, status: number): NextResponse {
+  const response = new NextResponse(html, { status, headers: noStoreHeaders() });
+  response.headers.set("content-type", "text/html; charset=utf-8");
+  response.headers.set("x-frame-options", "DENY");
+  response.headers.set(
+    "content-security-policy",
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  );
+  return response;
+}
+
+function unavailableCertificate(): NextResponse {
+  return htmlResponse(`<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>클리어 인증 확인 안내</title></head><body><main>
+<h1>클리어 인증 화면을 불러올 수 없습니다.</h1>
+<p>인증 응답을 확인하지 못했습니다. 이 요청은 자동으로 다시 전송하지 않습니다.</p>
+<p>인증 화면은 한 번만 열립니다. 제출 화면에서 8개 플래그를 다시 제출하면 새 인증 화면을 열 수 있습니다.</p>
+<p><a href="/submit">제출 화면으로 이동</a> · <a href="/">문제 목록으로 이동</a></p>
+</main></body></html>`, 502);
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -166,37 +198,42 @@ function certificateHtml(certificate: ClearCertificate): string {
 }
 
 export async function GET(request: NextRequest) {
-  const result = await consumeClearCertificate(request.headers.get("cookie") ?? "");
-
-  if (!result.ok && result.status === 401) {
-    return NextResponse.redirect(new URL("/login", request.url));
+  // A speculative navigation must never spend the participant's single view.
+  if (isPrefetchRequest(request)) {
+    return new NextResponse(null, { status: 204, headers: noStoreHeaders() });
   }
-
-  if (!result.ok && result.status === 403) {
-    return NextResponse.redirect(new URL("/submit", request.url));
-  }
-
-  if (!result.ok) {
-    return new NextResponse("클리어 인증 화면을 불러올 수 없습니다.", {
-      status: 502,
-      headers: {
-        "cache-control": "no-store",
-      },
+  // SameSite cookies can accompany sibling-origin images or frames. Reject
+  // those requests before the backend can consume the participant's view.
+  if (!isCertificateNavigation(request)) {
+    return new NextResponse("클리어 인증은 제출 화면에서 직접 열어주세요.", {
+      status: 403,
+      headers: noStoreHeaders(),
     });
   }
 
-  const response = new NextResponse(certificateHtml(result.data), {
-    status: 200,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
-      pragma: "no-cache",
-    },
-  });
-  const setCookie = result.headers.get("set-cookie");
-  if (setCookie) {
-    response.headers.set("set-cookie", setCookie);
+  const result = await consumeClearCertificate(request.headers.get("cookie") ?? "");
+
+  if (!result.ok && result.status === 401) {
+    return NextResponse.redirect(publicUrl("/login", request), { headers: noStoreHeaders() });
+  }
+
+  if (!result.ok && result.status === 403) {
+    return NextResponse.redirect(publicUrl("/submit", request), { headers: noStoreHeaders() });
+  }
+
+  if (!result.ok || !isCertificate(result.data)) {
+    return unavailableCertificate();
+  }
+
+  const response = htmlResponse(certificateHtml(result.data), 200);
+  for (const setCookie of result.headers.getSetCookie()) {
+    response.headers.append("set-cookie", setCookie);
   }
 
   return response;
+}
+
+// Next otherwise synthesizes HEAD by executing GET, including its mutation.
+export function HEAD() {
+  return new NextResponse(null, { status: 200, headers: noStoreHeaders() });
 }

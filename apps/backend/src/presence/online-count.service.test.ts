@@ -24,6 +24,20 @@ test("OnlineCountService returns Redis presence count when Redis has active sess
   });
 });
 
+test("an unconfigured Redis uses the database without reporting a healthy Redis source", async () => {
+  const service = new OnlineCountService(null, { countRecentlySeenSessions: async () => 4 });
+  const result = await service.getOnlineCount();
+  assert.equal(result.onlineSessionCount, 4);
+  assert.equal(result.source, "db_last_seen_fallback");
+});
+
+test("a rejected Redis scan falls back to database activity", async () => {
+  const service = new OnlineCountService({ countActiveSessions: async () => { throw new Error("scan aborted"); } }, {
+    countRecentlySeenSessions: async () => 7,
+  });
+  assert.equal((await service.getOnlineCount()).onlineSessionCount, 7);
+});
+
 test("OnlineCountService falls back to last_seen_at window when Redis is unavailable or empty", async () => {
   const events: string[] = [];
   const service = new OnlineCountService(

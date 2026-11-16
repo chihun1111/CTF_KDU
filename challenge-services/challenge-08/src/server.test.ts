@@ -1,3 +1,5 @@
+import { configureBackend, registerHttpRuntimeTests, send, startServer } from "../../test-support/http-runtime.mjs";
+import { createChallengeServer } from "./server.js";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
@@ -12,6 +14,7 @@ import {
   parseTicketValue,
   readClaims,
   readInternalServiceToken,
+  readSessionToken,
   renderDeniedPage,
   renderPrizePage,
   renderVaultPage,
@@ -21,7 +24,7 @@ import {
 } from "./server.js";
 
 const GLOBAL_HEADER_MARKUP =
-  '<header class="campusGlobalHeader"> <div class="campusGlobalHeaderInner"> <a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"> <span class="campusGlobalBrandMark">KDU</span> <span class="campusGlobalBrandText">교내 서비스</span> </a> <a class="campusGlobalHomeLink" href="/hub">전체 서비스</a> </div> </header>';
+  '<header class="campusGlobalHeader"> <div class="campusGlobalHeaderInner"> <a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"> <span class="campusGlobalBrandMark">KDU</span> <span class="campusGlobalBrandText">교내 CTF</span> </a> <a class="campusGlobalHomeLink" href="/">문제 목록</a> </div> </header>';
 
 function assertGlobalHeader(html: string): void {
   const normalized = html.replace(/\s+/g, " ").trim();
@@ -98,33 +101,36 @@ const K = new Uint32Array([
 const rotr = (x: number, n: number) => (x >>> n) | (x << (32 - n));
 
 function compress(state: Uint32Array, block: Uint8Array): Uint32Array {
+  assert.equal(state.length, 8);
+  assert.equal(block.length, 64);
+  // The fixed SHA-256 block/state sizes bound every index used below.
   const w = new Uint32Array(64);
   for (let i = 0; i < 16; i += 1) {
-    w[i] = ((block[i * 4] << 24) | (block[i * 4 + 1] << 16) | (block[i * 4 + 2] << 8) | block[i * 4 + 3]) >>> 0;
+    w[i] = ((block[i * 4]! << 24) | (block[i * 4 + 1]! << 16) | (block[i * 4 + 2]! << 8) | block[i * 4 + 3]!) >>> 0;
   }
   for (let i = 16; i < 64; i += 1) {
-    const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
-    const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
-    w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    const s0 = rotr(w[i - 15]!, 7) ^ rotr(w[i - 15]!, 18) ^ (w[i - 15]! >>> 3);
+    const s1 = rotr(w[i - 2]!, 17) ^ rotr(w[i - 2]!, 19) ^ (w[i - 2]! >>> 10);
+    w[i] = (w[i - 16]! + s0 + w[i - 7]! + s1) >>> 0;
   }
   const h = Uint32Array.from(state);
   for (let i = 0; i < 64; i += 1) {
-    const S1 = rotr(h[4], 6) ^ rotr(h[4], 11) ^ rotr(h[4], 25);
-    const ch = (h[4] & h[5]) ^ (~h[4] & h[6]);
-    const t1 = (h[7] + S1 + ch + K[i] + w[i]) >>> 0;
-    const S0 = rotr(h[0], 2) ^ rotr(h[0], 13) ^ rotr(h[0], 22);
-    const maj = (h[0] & h[1]) ^ (h[0] & h[2]) ^ (h[1] & h[2]);
+    const S1 = rotr(h[4]!, 6) ^ rotr(h[4]!, 11) ^ rotr(h[4]!, 25);
+    const ch = (h[4]! & h[5]!) ^ (~h[4]! & h[6]!);
+    const t1 = (h[7]! + S1 + ch + K[i]! + w[i]!) >>> 0;
+    const S0 = rotr(h[0]!, 2) ^ rotr(h[0]!, 13) ^ rotr(h[0]!, 22);
+    const maj = (h[0]! & h[1]!) ^ (h[0]! & h[2]!) ^ (h[1]! & h[2]!);
     const t2 = (S0 + maj) >>> 0;
-    h[7] = h[6];
-    h[6] = h[5];
-    h[5] = h[4];
-    h[4] = (h[3] + t1) >>> 0;
-    h[3] = h[2];
-    h[2] = h[1];
-    h[1] = h[0];
+    h[7] = h[6]!;
+    h[6] = h[5]!;
+    h[5] = h[4]!;
+    h[4] = (h[3]! + t1) >>> 0;
+    h[3] = h[2]!;
+    h[2] = h[1]!;
+    h[1] = h[0]!;
     h[0] = (t1 + t2) >>> 0;
   }
-  return h.map((v, i) => (v + state[i]) >>> 0) as Uint32Array;
+  return h.map((v, i) => (v + state[i]!) >>> 0) as Uint32Array;
 }
 
 function padFor(lengthBytes: number): Buffer {
@@ -139,7 +145,7 @@ function padFor(lengthBytes: number): Buffer {
 }
 
 function sha256FromState(initState: Uint32Array, data: Buffer): string {
-  let state = Uint32Array.from(initState);
+  let state: Uint32Array = Uint32Array.from(initState);
   for (let offset = 0; offset < data.length; offset += 64) {
     state = compress(state, data.subarray(offset, offset + 64));
   }
@@ -162,7 +168,7 @@ test("challenge-08 a genuine length-extension forge opens the vault as winner", 
   const guestTicket = encodeTicketValue(key, guestPayload);
 
   const originalHashState = new Uint32Array(
-    guestTicket.split(".")[1].match(/.{8}/g)!.map((chunk) => Number.parseInt(chunk, 16)),
+    guestTicket.split(".")[1]!.match(/.{8}/g)!.map((chunk) => Number.parseInt(chunk, 16)),
   );
   const suffix = "&role=winner";
   const originalLength = keyLength + guestPayload.length;
@@ -215,14 +221,36 @@ test("challenge-08 validates both access cookies before consuming the grant", ()
   assert.equal(consumeAccessGrant(store, token, grant.bonusCookieValue, "session-a"), undefined);
 });
 
+test("challenge-08 bounds outstanding grants and prunes expired entries", () => {
+  let clock = 1_000_000;
+  const store = createGrantStore(() => clock, 2);
+  const original = store.issue("session-a");
+  clock += 1_000;
+  const replacement = store.issue("session-a");
+  assert.equal(replacement, original, "concurrent checks must preserve an already-issued redirect");
+  assert.equal(store.peek(replacement)?.expiresAt, 1_000_000 + 10 * 60 * 1_000, "rechecks must not extend the original grant lifetime");
+  const other = store.issue("session-b");
+  assert.throws(() => store.issue("session-c"), /capacity/);
+  assert(store.peek(other), "capacity pressure must not invalidate another participant's grant");
+
+  clock += 10 * 60 * 1000 + 1;
+  const afterExpiry = store.issue("session-c");
+  assert(store.peek(afterExpiry));
+  assert.equal(store.peek(replacement), undefined);
+  assert.equal(store.peek(other), undefined);
+  assert(store.consume(afterExpiry, "session-c"));
+  assert(store.issue("session-d"), "consumed grants must release capacity");
+  assert.throws(() => createGrantStore(Date.now, 0), /positive integer/);
+});
+
 test("challenge-08 redirects without a query token and scopes access cookies to the prize path", () => {
   const headers = buildAccessGrantRedirect("opaque-access-token", "opaque-bonus-cookie");
 
-  assert.equal(headers.location, "/bonus/vault/prize");
+  assert.equal(headers.location, "/challenges/08/prize");
   assert.equal(headers.location.includes("?access="), false);
   assert.deepEqual(headers["set-cookie"], [
-    "bonus_access=opaque-access-token; Path=/bonus/vault/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600",
-    "bonus_success=opaque-bonus-cookie; Path=/bonus/vault/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600",
+    "bonus_access=opaque-access-token; Path=/challenges/08/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600",
+    "bonus_success=opaque-bonus-cookie; Path=/challenges/08/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600",
   ]);
 });
 
@@ -235,11 +263,10 @@ test("challenge-08 pages keep flag material out of static renders", () => {
     assertGlobalHeader(page);
   }
   assert(vault.includes("role: guest"));
-  assert(vault.includes("<form method=\"post\" action=\"/bonus/vault/check\">"));
+  assert(vault.includes("<form method=\"post\" action=\"/challenges/08/check\">"));
   assert.equal(vault.includes("action=\"/check\""), false);
   assert(denied.includes("현재 권한으로는 금고를 열 수 없습니다."));
-  assert(denied.includes("href=\"/bonus/vault/\""));
-  assert.equal(denied.includes("href=\"/\""), false);
+  assert(denied.includes("href=\"/challenges/08/\""));
   assert.equal(renderVaultPage("winner").includes("KDUCTF" + "{"), false);
 
   assert(prize.includes("KDUCTF" + "{current_user_flag_08}"));
@@ -259,4 +286,67 @@ test("challenge-08 derives different ticket keys for different sessions without 
   assert.notEqual(bindingA, bindingB);
   assert.equal(bindingA?.includes("opaque-a"), false);
   assert.notDeepEqual(deriveVaultKey("internal-token", bindingA!), deriveVaultKey("internal-token", bindingB!));
+  assert.equal(sessionBindingFromCookie("ctf_session=%6Fpaque-a"), bindingA, "percent encoding must not create a different session identity");
+  for (const cookie of [undefined, "", "ctf_session=", "ctf_session=%", "ctf_session=%252F", "ctf_session=bad%2Ftoken", "ctf_session=a; ctf_session=a", `ctf_session=${"a".repeat(513)}`]) {
+    assert.equal(readSessionToken(cookie), null);
+    assert.equal(sessionBindingFromCookie(cookie), null);
+  }
 });
+
+test("challenge-08 issues the guest ticket for its canonical public route", async (t) => {
+  await configureBackend(t);
+  t.mock.method(globalThis, "fetch", async () =>
+    new Response(JSON.stringify({ flagId: "FLAG-08", flag: "KDUCTF" + "{guest_route_runtime}" })),
+  );
+  const port = await startServer(t, createChallengeServer);
+  const response = await send(port, "/");
+
+  assert.equal(response.status, 200);
+  const ticketCookie = response.headers["set-cookie"]?.find((value) => value.startsWith("vault_ticket="));
+  assert(ticketCookie);
+  assert.match(ticketCookie, /; Path=\/challenges\/08; SameSite=Lax$/);
+  assert(response.body.includes('action="/challenges/08/check"'));
+});
+
+test("challenge-08 preserves concurrent check redirects and consumes a grant only on an intentional prize request", async (t) => {
+  await configureBackend(t);
+  let backendCalls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    backendCalls += 1;
+    return new Response(JSON.stringify({ flagId: "FLAG-08", flag: "KDUCTF" + "{grant_runtime}" }));
+  });
+  const store = createGrantStore();
+  const port = await startServer(t, () => createChallengeServer(store));
+  const sessionCookie = "ctf_session=runtime-test-session";
+  const binding = sessionBindingFromCookie(sessionCookie)!;
+  const winnerTicket = encodeTicketValue(deriveVaultKey("test-internal-token", binding), "role=winner");
+  const redirects = await Promise.all([
+    send(port, "/check", "POST", `${sessionCookie}; vault_ticket=${winnerTicket}`),
+    send(port, "/check", "POST", `ctf_session=%72untime-test-session; vault_ticket=${winnerTicket}`),
+  ]);
+  for (const response of redirects) assert.equal(response.status, 303);
+  assert.deepEqual(redirects[0]?.headers["set-cookie"], redirects[1]?.headers["set-cookie"]);
+  const accessCookies = redirects[0]?.headers["set-cookie"]?.map((value) => value.split(";", 1)[0]).join("; ");
+  assert(accessCookies);
+  const cookie = `${sessionCookie}; ${accessCookies}`;
+  const callsBeforeSpeculation = backendCalls;
+  for (const headers of [
+    { purpose: "prefetch" },
+    { "sec-purpose": "prefetch;prerender" },
+    { "sec-fetch-site": "same-origin", "sec-fetch-dest": "image" },
+    { "sec-fetch-site": "same-site", "sec-fetch-dest": "document" },
+    { "sec-fetch-site": "cross-site", "sec-fetch-dest": "empty" },
+  ] as Array<Record<string, string>>) {
+    const response = await send(port, "/prize", "GET", cookie, headers);
+    assert.equal(response.status, 403);
+    assert.equal(response.headers["cache-control"], "no-store");
+  }
+  assert.equal(backendCalls, callsBeforeSpeculation, "speculative requests must not authenticate or consume the grant");
+  assert.equal((await send(port, "/prize", "HEAD", cookie)).status, 405);
+  const accepted = await send(port, "/prize", "GET", cookie, { "sec-fetch-site": "same-origin", "sec-fetch-dest": "empty" });
+  assert.equal(accepted.status, 200, "same-origin fetch must remain usable by puzzle solvers");
+  assert(accepted.body.includes("KDUCTF" + "{grant_runtime}"));
+  assert.equal((await send(port, "/prize", "GET", cookie)).status, 403, "consumed grants must reject replay");
+});
+
+registerHttpRuntimeTests({ createServer: createChallengeServer, challengeId: "08" });

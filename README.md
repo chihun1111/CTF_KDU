@@ -23,7 +23,7 @@ KDU 교내 CTF는 실제 교내 서비스와 유사한 화면에서 웹 보안 �
 | 운영 형태 | 개인전 |
 | 참가 대상 | 교내 컴퓨터공학과·보안 관련 전공 학생 |
 | 문제 수 | 총 8개 |
-| 난이도 | 하 2개, 중 4개, 중상 2개 |
+| 난이도 | 입문 2개, 초급 4개, 중급 1개, 고급 1개 |
 | 학습 분야 | Web, Frontend, Database, Crypto, Misc |
 | 이용 방식 | 별도 설치 없이 웹 브라우저로 참가 |
 | 기본 언어 | 한국어 |
@@ -42,30 +42,37 @@ KDU 교내 CTF는 실제 교내 서비스와 유사한 화면에서 웹 보안 �
 - 데이터 무결성과 암호 기술이 실제 서비스에서 어떻게 사용되는지 경험합니다.
 - 공격자의 관찰 방식과 개발자의 방어 관점을 함께 익힙니다.
 
-구체적인 풀이 방법, 플래그 위치와 내부 출제 메모는 참가자에게 공개하지 않습니다.
+별도 출제자 풀이 문서와 실제 운영 플래그는 저장소에 포함하지 않습니다. 공개 소스에는
+교육용 문제 구현과 테스트가 있으므로 대회 중 소스 공개 여부는 별도 출제 정책으로 결정합니다.
 
 ## 참가자 진행 흐름
 
-```text
-회원가입 → 로그인 → 8개 서비스 탐색 → 플래그 수집·제출 → 클리어 인증
-```
+1. 메인 `/`에서 참가 방법과 난이도 안내를 읽고 회원가입하거나 로그인합니다.
+2. 로그인한 메인의 문제 목록에서 난이도와 분야를 보고 문제를 선택합니다.
+3. **문제 풀기** 버튼으로 `/challenges/01/`부터 `/challenges/08/` 중 선택한 문제의 실제 화면을 바로 엽니다.
+4. 해당 문제 안의 화면과 자료를 탐색해 참가자별 플래그를 모읍니다. 문제 목록으로 돌아오면 다른 문제를 선택할 수 있습니다.
+5. `/submit`에서 찾은 값부터 확인합니다. 결과는 최근 제출 기준이며, 최종 완료에는 8개 값을 한 번에 제출합니다.
+6. 최종 제출에 성공하면 1회용 클리어 화면의 안내에 따라 완료 인증을 진행합니다.
 
-1. 참가자는 7자리 학번과 비밀번호로 개인 계정을 만듭니다.
-2. 계정마다 서로 다른 8개의 플래그가 자동으로 발급됩니다.
-3. 참가자는 일반 교내 서비스처럼 구성된 8개 화면을 탐색합니다.
-4. 수집한 플래그를 제출 화면에 입력하고 검증합니다.
-5. 최종 제출에 성공하면 대회 완료 증빙에 사용할 수 있는 1회용 클리어 화면을 확인합니다.
+각 문제는 메인에서 독립적으로 시작합니다. 문제 내부의 상세 조회·검색·자료 열기는 같은
+번호의 URL 아래에서 이루어집니다. 공개된 힌트는 `/hints`에서 확인합니다.
 
 ## 문제 구성
 
-| 단계 | 문제 수 | 난이도 | 학습 초점 |
+| 난이도 | 문제 수 | 번호 | 학습 초점 |
 | --- | ---: | --- | --- |
-| 기초 | 2개 | 하 | 웹 페이지와 HTTP 통신의 기본 관찰 |
-| 응용 | 4개 | 중 | 접근 제어, 클라이언트 데이터와 배포 결과 분석 |
-| 심화 | 2개 | 중상 | 데이터베이스 보안과 데이터 무결성 검증 |
+| 입문 | 2개 | 01, 05 | 웹페이지와 배포 자료를 읽는 기본 탐색 |
+| 초급 | 4개 | 02, 03, 04, 06 | 주소·요청·브라우저 상태와 공개 자료의 관계 관찰 |
+| 중급 | 1개 | 07 | 입력 처리와 데이터 조회 분석 |
+| 고급 | 1개 | 08 | 해시·서명과 데이터 무결성 검증 |
 
-각 문제는 독립된 교내 서비스 시나리오로 구성했습니다. 문제의 의도된 학습 범위를 벗어나
-다른 참가자 정보나 운영 시스템에 접근하지 못하도록 사용자와 서비스 경계를 분리합니다.
+난이도는 출제자가 예상한 선수 지식 수준입니다. 실제 학생의 풀이 시간이나 성공률을
+측정한 등급은 아니며, 익숙한 도구와 분야에 따라 체감이 달라집니다.
+
+메인에는 문제 번호·난이도·분야·설명과 직접 풀이 버튼을 표시합니다. 경로와 공개 메타데이터는
+[참가 동선·난이도·URL 구성](docs/participant-navigation.md)에서 확인할 수 있습니다.
+문제의 의도된 학습 범위를 벗어나 다른 참가자 정보나 운영 시스템에 접근하지 못하도록
+사용자와 서비스 경계를 분리합니다.
 
 ## 안전 및 개인정보 보호 설계
 
@@ -85,23 +92,22 @@ KDU 교내 CTF는 실제 교내 서비스와 유사한 화면에서 웹 보안 �
 - 대회 전 민감정보 노출, 사용자 간 데이터 분리, 외부 공개 포트와 최종 제출 흐름을 다시
   점검합니다.
 
-## 현재 준비 및 검증 상태
+## 현재 보강 및 검증 상태
 
-2026년 8월 25일 로컬 사전 검증 기준 결과입니다. 운영 서버에 배포하기 전에는 동일한
-검증을 다시 수행합니다.
+공개 저장소에서 전체 테스트를 재현할 수 있도록 검증 경로를 정리했습니다. 인증·세션,
+최종 제출의 트랜잭션, 문제 서비스의 사용자 격리·실행 제한, 관리자 목록과 클리어 인증,
+의존성과 Docker 빌드를 보강했습니다.
 
-| 검증 항목 | 결과 |
-| --- | --- |
-| 검증 스크립트 테스트(`scripts/*.test.mjs`) | 43/43 통과 |
-| 8개 문제 서비스 단위 테스트 | 48/48 통과 |
-| TypeScript 전체 빌드 | 통과 |
-| 일반 런타임 smoke test | 15개 항목 통과 |
-| 전체 문제 통합 smoke test | 2개 참가자 기준 8개 문제, 사용자 분리, 최종 제출, 1회용 클리어 흐름 통과 |
-| Docker Compose 실행 점검 | 로컬 리허설에서 13개 서비스 실행, healthcheck 대상 12개 정상 |
+- [1차 보강 내역과 검증 결과](docs/review-2026-11-16.md)
+- [후속 보강 내역과 장애·동시성 검증](docs/review-followup-2026-11-16.md)
+- [참가자 관점 풀이·제출 흐름 검토](docs/playability-review-2026-11-16.md)
+- [현재 참가 동선·난이도·URL 구성](docs/participant-navigation.md)
+- [설치·운영·백업·secret 교체 가이드](docs/operations.md)
+- [자동 테스트·빌드 워크플로](.github/workflows/ci.yml)
+- [Docker 전체 흐름 검증 워크플로](.github/workflows/runtime.yml)
 
-한국어 참가자 화면과 반응형 제출 UI를 구현해 관련 정적 검증을 통과했으며, 운영자용
-접속 현황 집계와 Docker 기반 실행 구성까지 준비했습니다. 운영 서버에서는 아래 항목을
-확정한 뒤 동일한 검증을 다시 수행합니다.
+검증 명령이 성공한 범위와 실제 서버 리허설 범위를 구분합니다. 새로운 서버에서는
+TLS, secret 파일 소유권, DB 초기화, 사용자 흐름을 다시 확인한 뒤 대회를 진행합니다.
 
 ## 운영 전 확인 사항
 
@@ -139,39 +145,24 @@ KDU 교내 CTF는 실제 교내 서비스와 유사한 화면에서 웹 보안 �
 
 ## 개발 및 검증 방법
 
-필요한 개발 환경은 Node.js 24 이상, pnpm 10 이상, Docker Engine과 Docker Compose
-plugin입니다.
+Node.js 24, pnpm 10.32.1, SQLite CLI가 필요합니다. 전체 리허설에는 Docker Engine과
+Docker Compose v2를 사용합니다. 저장소에 기록된 pnpm 버전을 사용하세요.
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm build
+corepack pnpm install --frozen-lockfile
+corepack pnpm test
+corepack pnpm build
+corepack pnpm typecheck
+corepack pnpm verify:sensitive
+corepack pnpm audit
 ```
 
-최초 운영 환경에서는 필수 secret을 별도로 준비한 뒤 데이터 서비스 기동, DB migration,
-challenge metadata seed, 전체 서비스 기동 순서로 실행합니다.
+위 명령은 별도 내부 문서 없이 공개 clone에서 실행할 수 있습니다. Linux 테스트 환경에는
+`sqlite3` 명령을 설치해야 합니다. 최초 Docker 실행과 운영 검증의 정확한 순서는
+[운영 가이드](docs/operations.md)를 따르세요. 기본 로컬 주소는
+`http://localhost:8080`이며 외부 운영은 HTTPS가 필요합니다.
 
-```bash
-docker compose -f infra/docker/docker-compose.yml --env-file .env.production build
-docker compose -f infra/docker/docker-compose.yml --env-file .env.production up -d postgres redis
-docker compose -f infra/docker/docker-compose.yml --env-file .env.production \
-  run --rm backend node apps/backend/dist/database/migrate.js
-docker compose -f infra/docker/docker-compose.yml --env-file .env.production \
-  run --rm backend node apps/backend/dist/database/seed.js
-docker compose -f infra/docker/docker-compose.yml --env-file .env.production up -d
-docker compose -f infra/docker/docker-compose.yml --env-file .env.production ps
-```
-
-전체 테스트와 배포 전 통합 검증은 별도 관리하는 내부 문서와 운영 설정이 포함된 공식
-운영 작업 공간에서 수행합니다. 공개 저장소만 clone한 환경에는 내부 문서가 없으므로
-아래 명령의 전체 검증 범위를 실행할 수 없습니다.
-
-```bash
-pnpm test
-pnpm preflight:deploy
-```
-
-데이터 초기화가 필요한 경우가 아니라면 Docker volume을 삭제하는 명령은 실행하지
-않습니다.
+기존 데이터가 있는 환경에서 secret을 무작정 교체하거나 Docker volume을 삭제하지 않습니다.
 
 ## 문서 공개 범위
 

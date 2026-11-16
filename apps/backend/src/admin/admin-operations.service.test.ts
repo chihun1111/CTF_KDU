@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AdminOperationsService } from "./admin-operations.service.js";
+import type { OnlineCountResult } from "../presence/online-count.service.js";
 
 test("AdminOperationsService builds summary from aggregate counts and online sessions", async () => {
   const service = new AdminOperationsService(
@@ -42,6 +43,11 @@ test("AdminOperationsService builds summary from aggregate counts and online ses
         };
       },
     },
+    {
+      async check(endpoint) {
+        return { challengeId: endpoint.challengeId, status: "ok", latencyMs: 1 };
+      },
+    },
   );
 
   const now = new Date("2026-05-10T00:10:00.000Z");
@@ -65,6 +71,37 @@ test("AdminOperationsService builds summary from aggregate counts and online ses
     },
     generatedAt: "2026-05-10T00:10:00.000Z",
   });
+});
+
+test("summary and service status use measured health and preserve other results when one probe fails", async () => {
+  const calls: string[] = [];
+  const service = new AdminOperationsService(
+    {
+      async getSummaryCounts() { return { registeredUserCount: 1, submittedUserCount: 0, clearedUserCount: 0, finalSubmissionCount: 0 }; },
+      async listChallengeStatus(now) {
+        return [{ challengeId: "03", flagId: "FLAG-03", title: "Service", servicePath: "/challenges/03/", health: "ok", visible: true, solvedCount: 0, lastHealthcheckAt: now.toISOString() }];
+      },
+      async listParticipants() { throw new Error("unused"); },
+      async listSubmissions() { throw new Error("unused"); },
+      async listClears() { throw new Error("unused"); },
+      async listAuditLogs() { throw new Error("unused"); },
+      async getSystemHealthSnapshot() { return { postgresLatencyMs: 1 }; },
+    },
+    { async getOnlineCount() { return { onlineSessionCount: 1, source: "redis_presence", windowSeconds: 90, generatedAt: new Date().toISOString() }; } },
+    {
+      async check(endpoint) {
+        calls.push(endpoint.challengeId);
+        if (endpoint.challengeId === "03") throw new Error("unreachable");
+        return { challengeId: endpoint.challengeId, status: endpoint.challengeId === "02" ? "degraded" : "ok", latencyMs: 1 };
+      },
+    },
+  );
+  const [summary, status, health] = await Promise.all([service.getSummary(), service.listChallengeStatus(), service.getSystemHealth()]);
+  assert.deepEqual(summary.systemHealth.challengeServices, { ok: 6, degraded: 1, down: 1 });
+  assert.equal(status[0]?.health, "down");
+  assert.equal(health.challengeServices[0]?.status, "ok");
+  assert.equal(health.challengeServices[2]?.status, "down");
+  assert.equal(calls.length, 8);
 });
 
 test("AdminOperationsService serializes participant, submission, and clear dates without sensitive values", async () => {
@@ -314,4 +351,55 @@ test("AdminOperationsService reports measured system health without assuming dep
   assert.equal(health.challengeServices.length, 8);
   assert.deepEqual(health.challengeServices[0], { challengeId: "01", status: "ok", latencyMs: 12 });
   assert.equal(health.challengeServices[1]?.status, "down");
+});
+
+test("presence latency stops at its own settlement even while other health probes are pending", async (context) => {
+  let clockMs = 1_000;
+  context.mock.method(Date, "now", () => clockMs);
+
+  for (const lookupFails of [false, true]) {
+    clockMs = 1_000;
+    let resolveLookup!: (value: OnlineCountResult) => void;
+    let rejectLookup!: (error: Error) => void;
+    const lookupPromise = new Promise<OnlineCountResult>((resolve, reject) => {
+      resolveLookup = resolve;
+      rejectLookup = reject;
+    });
+    let releaseChallenges!: () => void;
+    const challengeGate = new Promise<void>((resolve) => { releaseChallenges = resolve; });
+    const service = new AdminOperationsService(
+      {
+        async getSummaryCounts() { throw new Error("unused"); },
+        async listParticipants() { throw new Error("unused"); },
+        async listSubmissions() { throw new Error("unused"); },
+        async listClears() { throw new Error("unused"); },
+        async listChallengeStatus() { throw new Error("unused"); },
+        async listAuditLogs() { throw new Error("unused"); },
+        async getSystemHealthSnapshot() { return { postgresLatencyMs: 1 }; },
+      },
+      { getOnlineCount: () => lookupPromise },
+      {
+        async check(endpoint) {
+          await challengeGate;
+          return { challengeId: endpoint.challengeId, status: "ok", latencyMs: 80 };
+        },
+      },
+    );
+    const pendingHealth = service.getSystemHealth(new Date("2026-05-10T00:00:00Z"));
+    clockMs = 1_007;
+    if (lookupFails) {
+      rejectLookup(new Error("presence unavailable"));
+    } else {
+      resolveLookup({ onlineSessionCount: 1, source: "redis_presence", windowSeconds: 90, generatedAt: "2026-05-10T00:00:00Z" });
+    }
+    // Flush the lookup's settlement callback without releasing the slower probes.
+    await Promise.resolve();
+    clockMs = 1_080;
+    releaseChallenges();
+
+    const health = await pendingHealth;
+    assert.equal(health.redis.latencyMs, 7);
+    assert.equal(health.redis.status, lookupFails ? "down" : "ok");
+    assert.equal(health.challengeServices[0]?.latencyMs, 80);
+  }
 });

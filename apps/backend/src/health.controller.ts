@@ -1,6 +1,5 @@
 import { Controller, Get, Inject } from "@nestjs/common";
 import { sql } from "drizzle-orm";
-import { users } from "@campus-ctf/db";
 import { DATABASE_CLIENT } from "./database/database.module.js";
 import { REDIS_CLIENT } from "./presence/presence.module.js";
 import type { RedisPresenceClient } from "./presence/redis-presence.store.js";
@@ -28,9 +27,7 @@ interface ApiHealthResponse {
 
 type DatabaseClientLike = {
   db: {
-    select(selection?: unknown): {
-      from(table: unknown): Promise<unknown[]>;
-    };
+    execute(query: unknown): Promise<unknown>;
   };
 };
 
@@ -40,6 +37,9 @@ function elapsedMs(start: number): number {
 
 @Controller()
 export class HealthController {
+  private snapshot: { expiresAt: number; value: { postgres: DependencyHealth; redis: DependencyHealth } } | undefined;
+  private pendingSnapshot: Promise<{ postgres: DependencyHealth; redis: DependencyHealth }> | undefined;
+
   constructor(
     @Inject(DATABASE_CLIENT) private readonly database: DatabaseClientLike | null,
     @Inject(REDIS_CLIENT) private readonly redis: RedisPresenceClient | null,
@@ -55,7 +55,7 @@ export class HealthController {
 
   @Get("api/health")
   async apiHealth(now = new Date()): Promise<ApiHealthResponse> {
-    const [postgres, redis] = await Promise.all([this.checkPostgres(), this.checkRedis()]);
+    const { postgres, redis } = await this.dependencies();
     return {
       backend: {
         status: "ok",
@@ -66,41 +66,35 @@ export class HealthController {
     };
   }
 
-  private async checkPostgres(): Promise<DependencyHealth> {
-    const start = Date.now();
-    try {
-      const rows = await this.database?.db.select({ count: sql<number>`count(*)` }).from(users);
-      return {
-        status: Array.isArray(rows) ? "ok" : "down",
-        latencyMs: elapsedMs(start),
-      };
-    } catch {
-      return {
-        status: "down",
-        latencyMs: elapsedMs(start),
-      };
-    }
+  private async dependencies(): Promise<{ postgres: DependencyHealth; redis: DependencyHealth }> {
+    if (this.snapshot && this.snapshot.expiresAt > Date.now()) return this.snapshot.value;
+    this.pendingSnapshot ??= Promise.all([
+      this.probe(this.database ? () => this.database!.db.execute(sql`select 1`) : null, "down"),
+      this.probe(this.redis ? () => this.redis!.ping() : null, "degraded"),
+    ]).then(([postgres, redis]) => {
+      const value = { postgres: postgres!, redis: redis! };
+      this.snapshot = { value, expiresAt: Date.now() + 1_000 };
+      return value;
+    }).finally(() => { this.pendingSnapshot = undefined; });
+    return this.pendingSnapshot;
   }
 
-  private async checkRedis(): Promise<DependencyHealth> {
+  private async probe(operation: (() => Promise<unknown>) | null, missing: DependencyStatus): Promise<DependencyHealth> {
     const start = Date.now();
-    if (!this.redis) {
-      return {
-        status: "degraded",
-        latencyMs: elapsedMs(start),
-      };
-    }
+    if (!operation) return { status: missing, latencyMs: 0 };
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      await this.redis.keys("__healthcheck__");
-      return {
-        status: "ok",
-        latencyMs: elapsedMs(start),
-      };
+      await Promise.race([
+        Promise.resolve().then(operation),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Dependency health timeout")), 1_500);
+        }),
+      ]);
+      return { status: "ok", latencyMs: elapsedMs(start) };
     } catch {
-      return {
-        status: "down",
-        latencyMs: elapsedMs(start),
-      };
+      return { status: "down", latencyMs: elapsedMs(start) };
+    } finally {
+      clearTimeout(timer);
     }
   }
 }

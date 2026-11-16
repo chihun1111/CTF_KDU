@@ -15,20 +15,12 @@ test("HealthController apiHealth reports backend, postgres, and redis dependency
   const controller = new HealthController(
     {
       db: {
-        select() {
-          return {
-            async from() {
-              return [{ count: 0 }];
-            },
-          };
-        },
+        async execute() { return { rows: [{ "?column?": 1 }] }; },
       },
     },
     {
-      async keys(pattern: string) {
-        assert.equal(pattern, "__healthcheck__");
-        return [];
-      },
+      async ping() { return "PONG"; },
+      async scan() { throw new Error("health must not scan keys"); },
       async setEx() {
         throw new Error("not used");
       },
@@ -49,13 +41,7 @@ test("HealthController apiHealth marks missing or failing dependencies without e
   const controller = new HealthController(
     {
       db: {
-        select() {
-          return {
-            async from() {
-              throw new Error("password=secret");
-            },
-          };
-        },
+        async execute() { throw new Error("password=secret"); },
       },
     },
     null,
@@ -67,4 +53,25 @@ test("HealthController apiHealth marks missing or failing dependencies without e
   assert.equal(health.postgres.status, "down");
   assert.equal(health.redis.status, "degraded");
   assert.equal(serialized.includes("password=secret"), false);
+});
+
+test("health calls share probes and bound hung dependencies without delaying healthy latency", { timeout: 5_000 }, async () => {
+  let postgresCalls = 0;
+  let redisCalls = 0;
+  const controller = new HealthController({ db: {
+    execute: async () => { postgresCalls += 1; return new Promise(() => undefined); },
+  } }, {
+    ping: async () => { redisCalls += 1; return "PONG"; },
+    scan: async () => { throw new Error("not used"); },
+    setEx: async () => { throw new Error("not used"); },
+  });
+  const start = Date.now();
+  const [first, second] = await Promise.all([controller.apiHealth(), controller.apiHealth()]);
+  assert.equal(first.postgres.status, "down");
+  assert.equal(second.redis.status, "ok");
+  assert(first.redis.latencyMs < first.postgres.latencyMs);
+  assert(Date.now() - start < 3_000);
+  await controller.apiHealth();
+  assert.equal(postgresCalls, 1);
+  assert.equal(redisCalls, 1);
 });

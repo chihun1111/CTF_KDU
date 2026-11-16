@@ -6,8 +6,10 @@ import { AuthController } from "./auth.controller.js";
 test("AuthController imports request DTOs as runtime values for Nest validation metadata", () => {
   const source = readFileSync(new URL("./auth.controller.ts", import.meta.url), "utf8");
 
-  assert.match(source, /import \{ LoginRequestDto, RegisterRequestDto \} from "\.\/dto\/auth\.dto\.js";/);
-  assert.doesNotMatch(source, /import type \{ LoginRequestDto, RegisterRequestDto \}/);
+  const importList = source.match(/import \{([^}]+)\} from "\.\/dto\/auth\.dto\.js";/)?.[1] ?? "";
+  const importedNames = importList.split(",").map((name) => name.trim());
+  assert(importedNames.includes("LoginRequestDto"));
+  assert(importedNames.includes("RegisterRequestDto"));
 });
 
 test("AuthController register sets cookie and no-store while returning only ok body", async () => {

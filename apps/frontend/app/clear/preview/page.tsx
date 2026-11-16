@@ -17,7 +17,7 @@ export default async function ClearPreviewPage() {
     redirect("/login");
   }
   if (session.role !== "admin") {
-    redirect("/hub");
+    redirect("/");
   }
 
   return (

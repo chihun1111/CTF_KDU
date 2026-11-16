@@ -6,11 +6,19 @@ const serviceId = "service-03";
 const serviceName = "과제 제출 확인";
 const unitName = "교무처";
 const challengeId = "03";
+// Runtime smoke verifies this display metadata against the shared public catalog.
+const challengeDifficulty = "초급";
+const challengeDifficultyLevel = 2;
+const CHALLENGE_CONTEXT = `<div class="challengeContext" aria-label="문제 정보"><span class="challengeNumber">문제 ${challengeId}</span><span class="difficultyBadge" data-level="${challengeDifficultyLevel}">난이도: ${challengeDifficulty}</span></div>`;
 
 const SERVICE_PAGE_STYLE = `
       :root { color-scheme: light; --bg: #f8fafc; --surface: #ffffff; --surface-muted: #f4f3f8; --text: #1a1c1f; --muted: #515f74; --border: #e2e8f0; --accent: #003366; --accent-strong: #001e40; --success: #166534; --warning: #92400e; }
       * { box-sizing: border-box; }
       body { margin: 0; background: var(--bg); color: var(--text); font-family: "Pretendard", "Noto Sans KR", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; line-height: 1.5; }
+      .challengeContext { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; grid-column: 1 / -1; margin: 0 0 16px; }
+      .challengeNumber { color: var(--accent); font-size: .86rem; font-weight: 800; white-space: nowrap; }
+      .difficultyBadge { display: inline-flex; align-items: center; min-height: 28px; border: 1px solid currentColor; border-radius: 999px; padding: 2px 10px; font-size: .82rem; font-weight: 800; white-space: nowrap; }
+      .difficultyBadge[data-level="2"] { color: #075985; background: #f0f9ff; }
       .campusGlobalHeader {
         border-bottom: 1px solid #e2e8f0;
         background: #ffffff;
@@ -106,6 +114,8 @@ const SERVICE_PAGE_STYLE = `
       @media (max-width: 640px) { .serviceShell { width: min(100% - 32px, 1280px); } .summaryStrip { grid-template-columns: 1fr; } .panel { overflow-x: auto; } .assignmentTable { min-width: 640px; } }
 `;
 
+class UpstreamUnavailableError extends Error {}
+
 type Env = Record<string, string | undefined>;
 type SecretFileReader = (path: string) => Promise<string | Buffer>;
 type FlagResponse = {
@@ -148,27 +158,34 @@ export function buildFlagBackendRequest(input: {
   return { url: url.toString(), headers };
 }
 
-async function fetchCurrentUserFlag(cookieHeader: string | undefined): Promise<string | null> {
+async function fetchCurrentUserFlag(cookieHeader: string | undefined, signal?: AbortSignal): Promise<string | null> {
+  if (!cookieHeader || !/(?:^|;)\s*ctf_session=[^;\s]+/.test(cookieHeader)) return null;
   const serviceToken = await readInternalServiceToken();
-  if (!serviceToken) {
-    return null;
-  }
-
-  const backendRequest = buildFlagBackendRequest({
-    backendInternalUrl: process.env.BACKEND_INTERNAL_URL,
-    cookieHeader,
-    serviceToken,
-  });
+  if (!serviceToken) throw new UpstreamUnavailableError("Service authentication is unavailable");
 
   try {
-    const response = await fetch(backendRequest.url, { headers: backendRequest.headers });
+    const backendRequest = buildFlagBackendRequest({
+      backendInternalUrl: process.env.BACKEND_INTERNAL_URL,
+      cookieHeader,
+      serviceToken,
+    });
+    const response = await fetch(backendRequest.url, {
+      headers: backendRequest.headers,
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5_000)]) : AbortSignal.timeout(5_000),
+      redirect: "error",
+    });
     if (!response.ok) {
-      return null;
+      await response.body?.cancel();
+      if (response.status === 401 || response.status === 403) return null;
+      throw new UpstreamUnavailableError("Flag service is unavailable");
     }
     const body = (await response.json()) as FlagResponse;
-    return body.flagId === "FLAG-03" && typeof body.flag === "string" ? body.flag : null;
+    if (body?.flagId !== "FLAG-03" || typeof body.flag !== "string") {
+      throw new UpstreamUnavailableError("Invalid flag service response");
+    }
+    return body.flag;
   } catch {
-    return null;
+    throw new UpstreamUnavailableError("Flag service is unavailable");
   }
 }
 
@@ -199,8 +216,9 @@ export function renderAssignmentList(): string {
     <style>${SERVICE_PAGE_STYLE}</style>
   </head>
   <body>
-    <header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 서비스</span></a><a class="campusGlobalHomeLink" href="/hub">전체 서비스</a></div></header>
+    <header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 CTF</span></a><a class="campusGlobalHomeLink" href="/">문제 목록</a></div></header>
     <main class="serviceShell">
+      ${CHALLENGE_CONTEXT}
       <header class="serviceHeader">
         <p class="unit">${unitName}</p>
         <h1>${serviceName}</h1>
@@ -216,8 +234,8 @@ export function renderAssignmentList(): string {
         <table class="assignmentTable">
           <thead><tr><th>번호</th><th>과제명</th><th>제출 상태</th><th>상세 조회</th></tr></thead>
           <tbody>
-            <tr><td>1</td><td>프로그래밍 기초 과제 1</td><td><span class="badge">제출 완료</span></td><td><a href="/student/assignments/view?id=1">내용 보기</a></td></tr>
-            <tr><td>2</td><td>웹프로그래밍 보고서</td><td><span class="badge">제출 완료</span></td><td><a href="/student/assignments/view?id=2">내용 보기</a></td></tr>
+            <tr><td>1</td><td><a href="/challenges/03/view?id=1">프로그래밍 기초 과제 1</a></td><td><span class="badge">제출 완료</span></td><td><a href="/challenges/03/view?id=1">내용 보기</a></td></tr>
+            <tr><td>2</td><td><a href="/challenges/03/view?id=2">웹프로그래밍 보고서</a></td><td><span class="badge">제출 완료</span></td><td><a href="/challenges/03/view?id=2">내용 보기</a></td></tr>
           </tbody>
         </table>
       </section>
@@ -236,8 +254,9 @@ export function renderAssignmentDetail(row: AssignmentRow): string {
     <style>${SERVICE_PAGE_STYLE}</style>
   </head>
   <body>
-    <header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 서비스</span></a><a class="campusGlobalHomeLink" href="/hub">전체 서비스</a></div></header>
+    <header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 CTF</span></a><a class="campusGlobalHomeLink" href="/">문제 목록</a></div></header>
     <main class="serviceShell">
+      ${CHALLENGE_CONTEXT}
       <header class="serviceHeader">
         <p class="unit">${unitName}</p>
         <h1>${escapeHtml(row.title)}</h1>
@@ -248,7 +267,7 @@ export function renderAssignmentDetail(row: AssignmentRow): string {
         <p><strong>소유자:</strong> ${escapeHtml(row.owner)}</p>
         <p><strong>내용:</strong></p>
         <p>${escapeHtml(row.content ?? "등록된 내용이 없습니다.")}</p>
-        <p><a href="/student/assignments/">목록으로 돌아가기</a></p>
+        <p><a href="/challenges/03/">목록으로 돌아가기</a></p>
       </section>
     </main>
   </body>
@@ -259,7 +278,7 @@ export function renderErrorPage(message: string): string {
   return `<!doctype html>
 <html lang="ko">
   <head><meta charset="utf-8" /><title>요청 오류 | ${serviceName}</title><style>${SERVICE_PAGE_STYLE}</style></head>
-  <body><header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 서비스</span></a><a class="campusGlobalHomeLink" href="/hub">전체 서비스</a></div></header><main class="serviceShell"><div class="panel"><div class="errorBox">${escapeHtml(message)}</div><p><a href="/student/assignments/">목록으로 돌아가기</a></p></div></main></body>
+  <body><header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 CTF</span></a><a class="campusGlobalHomeLink" href="/">문제 목록</a></div></header><main class="serviceShell">${CHALLENGE_CONTEXT}<div class="panel"><div class="errorBox">${escapeHtml(message)}</div><p><a href="/challenges/03/">목록으로 돌아가기</a></p></div></main></body>
 </html>`;
 }
 
@@ -282,12 +301,49 @@ function sendPage(response: ServerResponse, status: number, html: string): void 
 
 export function createChallengeServer() {
   return createServer((request, response) => {
-    void handleRequest(request, response);
+    const cancellation = new AbortController();
+    const abortDisconnectedRequest = () => {
+      if (!response.writableFinished) cancellation.abort();
+    };
+    request.once("aborted", abortDisconnectedRequest);
+    response.once("close", abortDisconnectedRequest);
+    void handleRequest(request, response, cancellation.signal).catch((error: unknown) => {
+      // Do not let a filesystem, upstream, or parsing failure terminate the service.
+      if (response.destroyed || response.writableEnded) return;
+      if (response.headersSent) {
+        response.destroy();
+        return;
+      }
+      response.writeHead(error instanceof UpstreamUnavailableError ? 503 : 500, {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      response.end("요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.\n");
+    }).finally(() => {
+      request.off("aborted", abortDisconnectedRequest);
+      response.off("close", abortDisconnectedRequest);
+    });
   });
 }
 
-async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  const url = new URL(request.url ?? "/", "http://localhost");
+async function handleRequest(request: IncomingMessage, response: ServerResponse, signal: AbortSignal): Promise<void> {
+  let url: URL;
+  try {
+    url = new URL(request.url ?? "/", "http://localhost");
+  } catch {
+    response.writeHead(400, {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    response.end("잘못된 요청입니다.\n");
+    return;
+  }
+  const allowedMethod = "GET";
+  if (request.method !== allowedMethod) {
+    response.writeHead(405, { allow: allowedMethod, "cache-control": "no-store" });
+    response.end();
+    return;
+  }
 
   if (url.pathname === "/health") {
     response.writeHead(200, {
@@ -299,7 +355,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
 
   if (url.pathname === "/" || url.pathname === "/index.html") {
-    const flag = await fetchCurrentUserFlag(request.headers.cookie);
+    const flag = await fetchCurrentUserFlag(request.headers.cookie, signal);
     if (!flag) {
       response.writeHead(401, {
         "content-type": "text/plain; charset=utf-8",
@@ -313,7 +369,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
 
   if (url.pathname === "/view") {
-    const flag = await fetchCurrentUserFlag(request.headers.cookie);
+    const flag = await fetchCurrentUserFlag(request.headers.cookie, signal);
     if (!flag) {
       response.writeHead(401, {
         "content-type": "text/plain; charset=utf-8",

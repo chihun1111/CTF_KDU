@@ -36,15 +36,14 @@ test("AdminOperationsDrizzleStore returns pseudonymous participant references wi
       },
     ],
     [{ count: 1 }],
-    [],
-    [],
-    [],
-    [],
   ];
   const selectCalls: unknown[] = [];
   const store = new AdminOperationsDrizzleStore(
     {
       db: {
+        async execute() {
+          throw new Error("not used");
+        },
         select(selection?: unknown) {
           selectCalls.push(selection);
           return makeQuery(selectedRows.shift() ?? []);

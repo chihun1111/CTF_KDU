@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import {
+  auditLogs,
   challengeFlags,
   challenges,
   clears,
@@ -7,6 +8,7 @@ import {
   finalSubmissionResults,
   finalSubmissions,
 } from "@campus-ctf/db";
+import { AUDIT_ACTIONS } from "../audit/audit.service.js";
 import type {
   FinalFlagId,
   FinalSubmitStore,
@@ -116,6 +118,20 @@ class FinalSubmitDrizzleTransaction implements FinalSubmitTransaction {
       finalSubmissionId: input.finalSubmissionId,
       tokenHash: input.tokenHash,
       expiresAt: input.expiresAt,
+    });
+  }
+
+  async recordFinalSubmitAudit(input: Parameters<FinalSubmitTransaction["recordFinalSubmitAudit"]>[0]): Promise<void> {
+    await this.tx.insert(auditLogs).values({
+      userId: input.userId,
+      action: AUDIT_ACTIONS.FINAL_SUBMIT,
+      metadata: {
+        logCategory: "required_operations",
+        correctCount: input.correctCount,
+        requiredCount: input.requiredCount,
+        submittedCount: input.submittedCount,
+        cleared: input.cleared,
+      },
     });
   }
 }

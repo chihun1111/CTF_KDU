@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AdminOperationsAutoRefresh } from "../../components/admin-operations-auto-refresh";
+import { AdminPagination } from "../../components/admin-pagination";
+import { AuditLogDialog } from "../../components/audit-log-dialog";
 import { LogoutButton } from "../../components/logout-button";
+import { FlagResultList } from "../../components/flag-result-list";
+import { parseAdminPages } from "../../lib/admin-pagination";
 import {
   getAdminClears,
   getAdminAuditLogs,
@@ -15,7 +19,6 @@ import {
   getOnlineSessionCount,
 } from "../../lib/server-api";
 import {
-  FLAG_IDS,
   formatDateTime,
   type AdminAuditLogItem,
   type AdminChallengeStatusItem,
@@ -27,14 +30,20 @@ import {
   type AdminSystemHealth,
 } from "../../lib/types";
 
-export default async function AdminOperationsPage() {
+export default async function AdminOperationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await getCurrentSession();
   if (!session.authenticated) {
     redirect("/login");
   }
   if (session.role !== "admin") {
-    redirect("/hub");
+    redirect("/");
   }
+
+  const pages = parseAdminPages(await searchParams);
 
   const [
     summaryResult,
@@ -49,14 +58,22 @@ export default async function AdminOperationsPage() {
   ] = await Promise.all([
     getAdminOperationsSummary(),
     getOnlineSessionCount(),
-    getAdminParticipants(),
-    getAdminSubmissions(),
-    getAdminClears(),
+    getAdminParticipants(pages.participantsPage),
+    getAdminSubmissions(pages.submissionsPage),
+    getAdminClears(pages.clearsPage),
     getAdminChallengeStatus(),
     getAdminSystemHealth(),
-    getAdminAuditLogs(),
+    getAdminAuditLogs(pages.auditPage),
     getAdminHints(),
   ]);
+  const responses = [summaryResult, onlineResult, participantsResult, submissionsResult, clearsResult,
+    challengeStatusResult, systemHealthResult, auditLogsResult, adminHintsResult];
+  if (responses.some((result) => !result.ok && result.status === 401)) {
+    redirect("/login");
+  }
+  if (responses.some((result) => !result.ok && result.status === 403)) {
+    redirect("/");
+  }
   if (
     !summaryResult.ok ||
     !onlineResult.ok ||
@@ -107,8 +124,8 @@ export default async function AdminOperationsPage() {
           <Link className="secondaryLink" href="/clear/preview">
             클리어 미리보기
           </Link>
-          <Link className="secondaryLink" href="/hub">
-            허브
+          <Link className="secondaryLink" href="/">
+            문제 목록
           </Link>
           <LogoutButton />
         </nav>
@@ -153,12 +170,20 @@ export default async function AdminOperationsPage() {
       </section>
 
       <section className="adminSectionGrid" aria-label="운영 상세 섹션">
-        <ParticipantTable items={participants} />
-        <SubmissionTable items={submissions} />
-        <ClearTable items={clears} />
+        <ParticipantTable items={participants} pagination={
+          <AdminPagination list={participantsResult.data} pages={pages} pageKey="participantsPage" section="participants" label="참가 현황" />
+        } />
+        <SubmissionTable items={submissions} pagination={
+          <AdminPagination list={submissionsResult.data} pages={pages} pageKey="submissionsPage" section="submissions" label="제출 현황" />
+        } />
+        <ClearTable items={clears} pagination={
+          <AdminPagination list={clearsResult.data} pages={pages} pageKey="clearsPage" section="clears" label="클리어 현황" />
+        } />
         <ChallengeStatusTable items={challengeStatus} />
         <SystemHealthPanel health={systemHealth} />
-        <AuditLogTable items={auditLogs} />
+        <AuditLogTable items={auditLogs} pagination={
+          <AdminPagination list={auditLogsResult.data} pages={pages} pageKey="auditPage" section="audit-logs-modal" label="감사 로그" />
+        } />
       </section>
 
       <AdminHintsPanel challenges={adminHints.challenges} releasedCount={adminHints.releasedStageCount} totalCount={adminHints.totalStageCount} />
@@ -254,7 +279,7 @@ function statusLabel(status: "ok" | "degraded" | "down"): string {
   return "중단";
 }
 
-function ParticipantTable({ items }: { items: AdminParticipantListItem[] }) {
+function ParticipantTable({ items, pagination }: { items: AdminParticipantListItem[]; pagination: React.ReactNode }) {
   return (
     <article className="panel adminTablePanel" id="participants">
       <h2>참가 현황</h2>
@@ -282,11 +307,12 @@ function ParticipantTable({ items }: { items: AdminParticipantListItem[] }) {
         </tbody>
       </table>
       {items.length === 0 ? <p className="mutedText">표시할 참가자가 없습니다.</p> : null}
+      {pagination}
     </article>
   );
 }
 
-function SubmissionTable({ items }: { items: AdminSubmissionListItem[] }) {
+function SubmissionTable({ items, pagination }: { items: AdminSubmissionListItem[]; pagination: React.ReactNode }) {
   return (
     <article className="panel adminTablePanel" id="submissions">
       <h2>제출 현황</h2>
@@ -308,24 +334,19 @@ function SubmissionTable({ items }: { items: AdminSubmissionListItem[] }) {
                 {item.requiredCount}개 중 {item.correctCount}개
               </td>
               <td>
-                <span className="compactResults">
-                  {FLAG_IDS.map((flagId) => (
-                    <span className={item.resultsByFlagId[flagId]?.correct ? "resultGood" : "resultBad"} key={flagId}>
-                      {flagId.slice(-2)}
-                    </span>
-                  ))}
-                </span>
+                <FlagResultList results={item.resultsByFlagId} />
               </td>
             </tr>
           ))}
         </tbody>
       </table>
       {items.length === 0 ? <p className="mutedText">표시할 제출 이력이 없습니다.</p> : null}
+      {pagination}
     </article>
   );
 }
 
-function ClearTable({ items }: { items: AdminClearListItem[] }) {
+function ClearTable({ items, pagination }: { items: AdminClearListItem[]; pagination: React.ReactNode }) {
   return (
     <article className="panel adminTablePanel" id="clears">
       <h2>클리어 현황</h2>
@@ -346,6 +367,7 @@ function ClearTable({ items }: { items: AdminClearListItem[] }) {
         </tbody>
       </table>
       {items.length === 0 ? <p className="mutedText">표시할 클리어 기록이 없습니다.</p> : null}
+      {pagination}
     </article>
   );
 }
@@ -410,34 +432,32 @@ function SystemHealthPanel({ health }: { health: AdminSystemHealth }) {
   );
 }
 
-function AuditLogTable({ items }: { items: AdminAuditLogItem[] }) {
+function AuditLogTable({ items, pagination }: { items: AdminAuditLogItem[]; pagination: React.ReactNode }) {
   return (
     <article className="panel auditLaunchPanel" id="audit-logs">
       <div>
         <h2>감사 로그</h2>
         <p>운영 조회와 보안 이벤트를 팝업으로 확인합니다. 민감 원문은 표시하지 않습니다.</p>
       </div>
-      <a className="auditLaunchButton" href="#audit-logs-modal">
+      <a className="auditLaunchButton" href="#audit-logs-modal" id="audit-logs-trigger" aria-haspopup="dialog">
         <span>감사 로그 보기</span>
         <strong>{items.length}개</strong>
       </a>
-      <section aria-labelledby="audit-logs-title" className="auditModal" id="audit-logs-modal" role="dialog">
-        <a aria-label="감사 로그 닫기" className="auditModalBackdrop" href="#audit-logs" />
-        <div className="auditModalPanel">
-          <div className="auditModalHeader">
-            <div>
-              <h2 id="audit-logs-title">감사 로그</h2>
-              <p>최근 운영 이벤트</p>
-            </div>
-            <a className="secondaryLink compactModalClose" href="#audit-logs">
-              닫기
-            </a>
+      <AuditLogDialog>
+        <div className="auditModalHeader">
+          <div>
+            <h2 id="audit-logs-title">감사 로그</h2>
+            <p>최근 운영 이벤트</p>
           </div>
-          <div className="adminTablePanel auditModalTable">
-            <AuditLogRows items={items} />
-          </div>
+          <form method="dialog">
+            <button className="secondaryLink compactModalClose" type="submit" autoFocus>닫기</button>
+          </form>
         </div>
-      </section>
+        <div className="adminTablePanel auditModalTable">
+          <AuditLogRows items={items} />
+          {pagination}
+        </div>
+      </AuditLogDialog>
     </article>
   );
 }

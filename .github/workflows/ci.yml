@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Test, build, and security checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # verified v4
+        with:
+          persist-credentials: false
+      - name: Set up Node.js 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # verified v4
+        with:
+          node-version: "24"
+      - name: Set up pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.1 --activate
+          pnpm --version
+      - name: Install SQLite for challenge tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends sqlite3
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run all tests and public repository checks
+        run: pnpm test
+      - name: Build all applications
+        run: pnpm build
+      - name: Check TypeScript
+        run: pnpm typecheck
+      - name: Check production artifacts for sensitive material
+        run: pnpm verify:sensitive
+      - name: Audit production and development dependencies
+        run: pnpm audit --audit-level=moderate

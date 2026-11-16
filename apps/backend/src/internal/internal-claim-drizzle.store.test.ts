@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { NotFoundException } from "@nestjs/common";
 import { InternalClaimDrizzleStore } from "./internal-claim-drizzle.store.js";
+import { InternalClaimService } from "./internal-claim.service.js";
 
 function tableName(table: unknown): string {
   return String((table as { [key: symbol]: string | undefined })[Symbol.for("drizzle:Name")] ?? "unknown");
@@ -132,4 +134,36 @@ test("InternalClaimDrizzleStore stores issued claim token hash without plaintext
   assert.equal(events[4]?.includes("challenge-8"), true);
   assert.equal(events[4]?.includes("claim-hash"), true);
   assert.equal(events[4]?.includes("opaque-claim-token"), false);
+});
+
+test("claim issuance rejects a missing or disabled challenge instead of returning an unusable token", async () => {
+  let inserts = 0;
+  const store = new InternalClaimDrizzleStore({
+    db: {
+      select() {
+        return { from: () => ({ where: () => ({ limit: async () => [] }) }) };
+      },
+      insert() {
+        inserts += 1;
+        return { values: async () => [] };
+      },
+    },
+  });
+  const service = new InternalClaimService(
+    store,
+    {
+      internalServiceTokenMatches: (challengeId, token) => challengeId === "08" && token === "internal-token",
+      generateOpaqueToken: () => "opaque-claim-token-with-at-least-32-bytes",
+      claimTokenHash: () => "claim-hash",
+      decryptFlagForInternalApi() { throw new Error("must not decrypt during issuance"); },
+    },
+    { async authenticateCookieHeader() { return { sessionId: "session-1", userId: "user-1", role: "participant" }; } },
+  );
+
+  await assert.rejects(() => service.issueClaim({
+    authorizationHeader: "Bearer internal-token",
+    cookieHeader: "ctf_session=session-token",
+    body: { challengeId: "08" },
+  }), NotFoundException);
+  assert.equal(inserts, 0);
 });

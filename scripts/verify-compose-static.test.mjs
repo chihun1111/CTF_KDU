@@ -83,7 +83,7 @@ function baseConfig() {
       "challenge-04": challenge("04"),
       "challenge-05": challenge("05"),
       "challenge-06": challenge("06"),
-      "challenge-07": challenge("07"),
+      "challenge-07": { ...challenge("07"), read_only: true, tmpfs: ["/app/state:size=64m,uid=1000,gid=1000,mode=0700,noexec,nosuid,nodev"] },
       "challenge-08": challenge("08"),
     },
   };
@@ -121,6 +121,16 @@ test("verify-compose-static rejects host-published internals and challenge flag 
   assert.notEqual(result.status, 0);
   assert.match(result.output, /Only nginx may publish host ports/);
   assert.match(result.output, /challenge-01 must not receive flag_encryption_key/);
+});
+
+test("verify-compose-static rejects unbounded SQLite state and a writable root", () => {
+  const config = baseConfig();
+  config.services["challenge-07"].read_only = false;
+  config.services["challenge-07"].tmpfs = ["/app/state"];
+  const result = run(config);
+  assert.notEqual(result.status, 0);
+  assert.match(result.output, /read-only root filesystem/);
+  assert.match(result.output, /private bounded tmpfs/);
 });
 
 test("verify-compose-static rejects cross-challenge token mounts", () => {

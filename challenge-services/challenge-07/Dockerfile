@@ -4,9 +4,9 @@ RUN corepack enable
 RUN apt-get update \
   && apt-get install -y --no-install-recommends sqlite3 \
   && rm -rf /var/lib/apt/lists/*
-COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY challenge-services/challenge-07/package.json challenge-services/challenge-07/package.json
-RUN pnpm install --frozen-lockfile=false --filter challenge-07...
+RUN pnpm install --frozen-lockfile --filter challenge-07...
 
 FROM deps AS build
 COPY challenge-services/challenge-07 challenge-services/challenge-07

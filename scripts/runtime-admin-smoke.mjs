@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { hmacLookupHash } from "../packages/config/dist/index.js";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -86,10 +86,6 @@ function readSecret(dir, name) {
   return readFileSync(`${dir}/${name}`, "utf8").trim();
 }
 
-function hmacLookupHash(pepper, value) {
-  return createHmac("sha256", pepper).update(value, "utf8").digest("hex");
-}
-
 function assertStudentHash(studentIdHash) {
   assert(/^[a-f0-9]{64}$/.test(studentIdHash), "student id hash must be hex sha256");
 }
@@ -147,6 +143,7 @@ async function request(options, path, init = {}) {
   }
   return fetch(`${options.baseUrl}${path}`, {
     ...init,
+    signal: init.signal ?? AbortSignal.timeout(15_000),
     headers,
     redirect: init.redirect ?? "manual",
     body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
@@ -192,16 +189,13 @@ function runPsqlQuery(options, query) {
       "exec",
       "-T",
       "postgres",
-      "psql",
-      "-U",
-      "campus_ctf",
-      "-d",
-      "campus_ctf",
-      "-tA",
+      "sh",
       "-c",
+      'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -c "$1"',
+      "psql-query",
       query,
     ],
-    { encoding: "utf8", stdio: "pipe" },
+    { encoding: "utf8", stdio: "pipe", timeout: 30_000 },
   );
 
   if (result.status !== 0) {
@@ -220,7 +214,7 @@ export function readFirstPsqlValue(stdout) {
   return value;
 }
 
-function runtimeStudentHash(options, studentId) {
+export function runtimeStudentHash(options, studentId) {
   return hmacLookupHash(readSecret(options.runtimeSecretsDir, "student_id_hash_pepper"), studentId);
 }
 
@@ -306,14 +300,14 @@ const ADMIN_ENDPOINTS = [
       assert(Array.isArray(body), "challenge status is not an array");
       assert(body.length === 8, `expected 8 challenge status rows, got ${body.length}`);
       const expectedPaths = [
-        "/campus/festival/",
-        "/system/status/",
-        "/student/assignments/",
-        "/clubs/admin/",
-        "/clubs/security/",
-        "/clubs/build-archive/",
-        "/community/board/",
-        "/bonus/vault/",
+        "/challenges/01/",
+        "/challenges/02/",
+        "/challenges/03/",
+        "/challenges/04/",
+        "/challenges/05/",
+        "/challenges/06/",
+        "/challenges/07/",
+        "/challenges/08/",
       ];
       assert(
         body.every(

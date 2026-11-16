@@ -103,10 +103,13 @@ export class InternalClaimService {
       throw new UnauthorizedException("Internal service authentication required");
     }
 
-    const challengeId = toClaimChallengeId(input.body.challengeId);
+    const challengeId = toClaimChallengeId(input.body?.challengeId);
     if (!challengeId) {
+      if (!this.crypto.internalServiceTokenMatches("06", internalToken) && !this.crypto.internalServiceTokenMatches("08", internalToken)) {
+        throw new UnauthorizedException("Internal service authentication required");
+      }
       const session = await this.authenticateSession(input.cookieHeader);
-      await this.recordClaimFailure(session.userId, input.body.challengeId, undefined, "invalid_input");
+      await this.recordClaimFailure(session.userId, input.body?.challengeId, undefined, "invalid_input");
       throw new NotFoundException("Claim not found");
     }
     if (!this.crypto.internalServiceTokenMatches(challengeId, internalToken)) {
@@ -125,7 +128,7 @@ export class InternalClaimService {
       userId: session.userId,
       flagId,
       tokenHash: this.crypto.claimTokenHash(claimToken),
-      now: new Date(),
+      now: this.clock.now(),
     });
     if (!claim) {
       await this.recordClaimFailure(session.userId, input.body.challengeId, flagId, "not_found");
@@ -140,7 +143,7 @@ export class InternalClaimService {
 
   async issueClaim(input: IssueClaimRequest): Promise<{ challengeId: "08"; claimToken: string }> {
     const internalToken = extractBearerToken(input.authorizationHeader);
-    if (!internalToken || input.body.challengeId !== "08") {
+    if (!internalToken || input.body?.challengeId !== "08") {
       throw new UnauthorizedException("Internal service authentication required");
     }
     if (!this.crypto.internalServiceTokenMatches("08", internalToken)) {

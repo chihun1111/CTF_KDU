@@ -1,3 +1,5 @@
+import { registerHttpRuntimeTests } from "../../test-support/http-runtime.mjs";
+import { createChallengeServer } from "./server.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -8,7 +10,7 @@ import {
 } from "./server.js";
 
 const GLOBAL_HEADER_MARKUP =
-  '<header class="campusGlobalHeader"> <div class="campusGlobalHeaderInner"> <a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"> <span class="campusGlobalBrandMark">KDU</span> <span class="campusGlobalBrandText">교내 서비스</span> </a> <a class="campusGlobalHomeLink" href="/hub">전체 서비스</a> </div> </header>';
+  '<header class="campusGlobalHeader"> <div class="campusGlobalHeaderInner"> <a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"> <span class="campusGlobalBrandMark">KDU</span> <span class="campusGlobalBrandText">교내 CTF</span> </a> <a class="campusGlobalHomeLink" href="/">문제 목록</a> </div> </header>';
 
 function assertGlobalHeader(html: string): void {
   const normalized = html.replace(/\s+/g, " ").trim();
@@ -53,7 +55,7 @@ test("challenge-06 archive page links the source map without flag material", () 
   const html = renderArchivePage();
 
   assertGlobalHeader(html);
-  assert(html.includes("/clubs/build-archive/assets/main.js.map"));
+  assert(html.includes("/challenges/06/assets/main.js.map"));
   assert.equal(html.includes("KDUCTF" + "{"), false);
   assert.equal(html.includes("ARCHIVE_ENTRY"), false);
   assert.equal(html.includes("FLAG-06"), false);
@@ -72,6 +74,9 @@ test("challenge-06 source map hides the current session flag in sourcesContent",
   assert.equal(map.version, 3);
   assert.equal(map.file, "main.js");
   assert.deepEqual(map.sources, ["../../src/config/archive.js"]);
+  assert(map.sourcesContent[0]);
   assert(map.sourcesContent[0].includes(`const ARCHIVE_ENTRY = ${JSON.stringify(flag)}`));
   assert.equal(renderSourceMap(otherFlag).includes(flag), false);
 });
+
+registerHttpRuntimeTests({ createServer: createChallengeServer, challengeId: "06" });

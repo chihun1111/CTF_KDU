@@ -1,4 +1,5 @@
 import { ForbiddenException } from "@nestjs/common";
+import { readTokenCookie } from "../auth/read-token-cookie.js";
 import type { EncryptedFieldBundle } from "@campus-ctf/config";
 import type { CryptoService } from "../crypto/crypto.service.js";
 import type { ClearCookieService } from "./clear-cookie.service.js";
@@ -36,7 +37,7 @@ export class ClearCertificateService {
     setCookie: string;
     body: { studentId: string; clearedAt: string; clearReceiptCode: string; message: string };
   }> {
-    const clearToken = this.extractCookie(cookieHeader, "ctf_clear_once");
+    const clearToken = readTokenCookie(cookieHeader, "ctf_clear_once");
     if (!clearToken) {
       throw new ForbiddenException("Clear certificate unavailable");
     }
@@ -59,21 +60,5 @@ export class ClearCertificateService {
         message: "8개 플래그를 모두 제출했습니다.",
       },
     };
-  }
-
-  private extractCookie(cookieHeader: string | undefined, name: string): string | null {
-    if (!cookieHeader) {
-      return null;
-    }
-
-    for (const part of cookieHeader.split(";")) {
-      const [rawName, ...rawValue] = part.trim().split("=");
-      if (rawName === name) {
-        const value = rawValue.join("=");
-        return value ? decodeURIComponent(value) : null;
-      }
-    }
-
-    return null;
   }
 }

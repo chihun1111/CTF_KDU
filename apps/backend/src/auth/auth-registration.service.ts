@@ -1,5 +1,6 @@
-import { ConflictException } from "@nestjs/common";
-import type { RegisterRequestDto } from "./dto/auth.dto.js";
+import { ConflictException, ServiceUnavailableException } from "@nestjs/common";
+import { FLAG_IDS } from "@campus-ctf/shared";
+import { parseRegisterRequest, type RegisterRequestDto } from "./dto/auth.dto.js";
 import type { EncryptedStorageValue } from "../crypto/crypto.service.js";
 import type { ChallengeForFlagIssuance, IssuedChallengeFlagRecord } from "../flags/flag-issuance.service.js";
 
@@ -75,7 +76,7 @@ export class AuthRegistrationService {
   ) {}
 
   async register(registration: RegistrationInput): Promise<RegistrationResult> {
-    const { input } = registration;
+    const input = parseRegisterRequest(registration?.input);
     const sessionToken = this.crypto.generateOpaqueToken();
     const sessionHash = this.crypto.sessionHash(sessionToken);
     const studentIdStorage = this.crypto.prepareStudentIdForStorage(input.studentId);
@@ -106,6 +107,14 @@ export class AuthRegistrationService {
       });
 
       const challenges = await tx.listActiveChallenges();
+      if (
+        challenges.length !== FLAG_IDS.length ||
+        new Set(challenges.map((challenge) => challenge.id)).size !== FLAG_IDS.length ||
+        !FLAG_IDS.every((flagId) => challenges.some((challenge) => challenge.flagId === flagId))
+      ) {
+        // The transaction rolls back user and consent writes when seeding is incomplete.
+        throw new ServiceUnavailableException("Registration is temporarily unavailable");
+      }
       await tx.createChallengeFlags(user.id, this.flagIssuer.issueChallengeFlagsForUser(challenges));
       await tx.createSession({
         userId: user.id,
