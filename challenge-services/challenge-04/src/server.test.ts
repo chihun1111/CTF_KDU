@@ -9,7 +9,7 @@ import {
   renderAdminScript,
 } from "./server.js";
 
-const GLOBAL_HEADER_MARKUP = '<header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 서비스</span></a><a class="campusGlobalHomeLink" href="/hub">전체 서비스</a></div></header>';
+const GLOBAL_HEADER_MARKUP = '<header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 CTF</span></a><a class="campusGlobalHomeLink" href="/">문제 목록</a></div></header>';
 
 function assertCampusGlobalHeader(html: string): void {
   assert(html.includes(GLOBAL_HEADER_MARKUP));
@@ -61,7 +61,7 @@ test("challenge-04 page keeps the admin panel hidden and free of flag material",
   assert.equal(html.includes("KDUCTF" + "{"), false);
   assert.equal(html.includes("FLAG-04"), false);
   assert.equal(html.includes('src="/assets/app.js"'), false);
-  assert(html.includes("/clubs/admin/assets/app.js"));
+  assert(html.includes("/challenges/04/assets/app.js"));
 });
 
 test("challenge-04 page includes the global campus header above the local service header", () => {

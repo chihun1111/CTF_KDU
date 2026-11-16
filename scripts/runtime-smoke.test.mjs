@@ -7,11 +7,11 @@ import test from "node:test";
 const MOCK_GLOBAL_HEADER = `
   <header class="campusGlobalHeader">
     <div class="campusGlobalHeaderInner">
-      <a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기">
+      <a class="campusGlobalBrand" href="/" aria-label="교내 CTF 목록으로 돌아가기">
         <span class="campusGlobalBrandMark">KDU</span>
-        <span class="campusGlobalBrandText">교내 서비스</span>
+        <span class="campusGlobalBrandText">교내 CTF</span>
       </a>
-      <a class="campusGlobalHomeLink" href="/hub">전체 서비스</a>
+      <a class="campusGlobalHomeLink" href="/">문제 목록</a>
     </div>
   </header>
 `;
@@ -34,17 +34,17 @@ test("runtime-smoke publishes the deployment checklist probes it can execute", (
       "/api/presence/heartbeat",
       "/api/final-submit",
       "/api/admin/operations/online-count",
-      "/hub?userId=smoke-other&session=smoke-other",
+      "/?userId=smoke-other&session=smoke-other",
       "/clear",
-      "/campus/festival/",
-      "/system/status/",
-      "/student/assignments/",
-      "/student/assignments/view?id=1",
-      "/clubs/admin/",
-      "/clubs/security/",
-      "/clubs/build-archive/",
-      "/community/board/",
-      "/bonus/vault/",
+      "/challenges/01/",
+      "/challenges/02/",
+      "/challenges/03/",
+      "/challenges/03/view?id=1",
+      "/challenges/04/",
+      "/challenges/05/",
+      "/challenges/06/",
+      "/challenges/07/",
+      "/challenges/08/",
     ],
   );
   assert.deepEqual(checklist.disabledEndpoints, ["/api/services/it-center-status/artifact"]);
@@ -81,18 +81,21 @@ function execNode(args) {
 
 test("runtime-smoke accepts the current services response shape", async () => {
   const serviceRoutes = [
-    "/campus/festival/",
-    "/system/status/",
-    "/student/assignments/",
-    "/clubs/admin/",
-    "/clubs/security/",
-    "/clubs/build-archive/",
-    "/community/board/",
-    "/bonus/vault/",
+    "/challenges/01/",
+    "/challenges/02/",
+    "/challenges/03/",
+    "/challenges/04/",
+    "/challenges/05/",
+    "/challenges/06/",
+    "/challenges/07/",
+    "/challenges/08/",
   ];
   const services = serviceRoutes.map((serviceHref, index) => ({
     id: String(index + 1).padStart(2, "0"),
     serviceHref,
+    difficultyLevel: [1, 2, 2, 2, 1, 2, 3, 4][index],
+    difficulty: ["입문", "초급", "초급", "초급", "입문", "초급", "중급", "고급"][index],
+    category: "Web",
   }));
 
   const server = createServer((request, response) => {
@@ -152,7 +155,7 @@ test("runtime-smoke accepts the current services response shape", async () => {
         response.writeHead(401).end();
         return;
       }
-      response.writeHead(307, { location: "/clubs/security/" }).end();
+      response.writeHead(307, { location: "/challenges/05/" }).end();
       return;
     }
 
@@ -163,13 +166,13 @@ test("runtime-smoke accepts the current services response shape", async () => {
       return;
     }
 
-    if (url.pathname === "/student/assignments/view") {
+    if (url.pathname === "/challenges/03/view") {
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       response.end("<!doctype html><h1>프로그래밍 기초 과제 1</h1><section>상세 정보</section>");
       return;
     }
 
-    if (url.pathname === "/hub") {
+    if (url.pathname === "/") {
       if (!request.headers.cookie?.includes("ctf_session=mock-session")) {
         response.writeHead(401).end();
         return;

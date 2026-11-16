@@ -40,7 +40,7 @@ export default async function AdminOperationsPage({
     redirect("/login");
   }
   if (session.role !== "admin") {
-    redirect("/hub");
+    redirect("/");
   }
 
   const pages = parseAdminPages(await searchParams);
@@ -72,7 +72,7 @@ export default async function AdminOperationsPage({
     redirect("/login");
   }
   if (responses.some((result) => !result.ok && result.status === 403)) {
-    redirect("/hub");
+    redirect("/");
   }
   if (
     !summaryResult.ok ||
@@ -124,8 +124,8 @@ export default async function AdminOperationsPage({
           <Link className="secondaryLink" href="/clear/preview">
             클리어 미리보기
           </Link>
-          <Link className="secondaryLink" href="/hub">
-            허브
+          <Link className="secondaryLink" href="/">
+            문제 목록
           </Link>
           <LogoutButton />
         </nav>

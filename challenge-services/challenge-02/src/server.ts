@@ -6,7 +6,7 @@ const serviceId = "service-02";
 const serviceName = "서비스 상태";
 const unitName = "전산실";
 const challengeId = "02";
-const PUBLIC_PREFIX = "/system/status";
+const PUBLIC_PREFIX = "/challenges/02";
 
 const SERVICE_PAGE_STYLE = `
       :root { color-scheme: light; --bg: #f8fafc; --surface: #ffffff; --surface-muted: #f4f3f8; --text: #1a1c1f; --muted: #515f74; --border: #e2e8f0; --accent: #003366; --accent-strong: #001e40; --success: #166534; --warning: #92400e; }
@@ -215,7 +215,7 @@ export function renderStatusPage(): string {
     <style>${SERVICE_PAGE_STYLE}</style>
   </head>
   <body>
-    <header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 서비스</span></a><a class="campusGlobalHomeLink" href="/hub">전체 서비스</a></div></header>
+    <header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 CTF</span></a><a class="campusGlobalHomeLink" href="/">문제 목록</a></div></header>
     <main class="serviceShell">
       <header class="serviceHeader">
         <p class="unit">${unitName}</p>

@@ -24,7 +24,7 @@ import {
 } from "./server.js";
 
 const GLOBAL_HEADER_MARKUP =
-  '<header class="campusGlobalHeader"> <div class="campusGlobalHeaderInner"> <a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"> <span class="campusGlobalBrandMark">KDU</span> <span class="campusGlobalBrandText">교내 서비스</span> </a> <a class="campusGlobalHomeLink" href="/hub">전체 서비스</a> </div> </header>';
+  '<header class="campusGlobalHeader"> <div class="campusGlobalHeaderInner"> <a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"> <span class="campusGlobalBrandMark">KDU</span> <span class="campusGlobalBrandText">교내 CTF</span> </a> <a class="campusGlobalHomeLink" href="/">문제 목록</a> </div> </header>';
 
 function assertGlobalHeader(html: string): void {
   const normalized = html.replace(/\s+/g, " ").trim();
@@ -246,11 +246,11 @@ test("challenge-08 bounds outstanding grants and prunes expired entries", () => 
 test("challenge-08 redirects without a query token and scopes access cookies to the prize path", () => {
   const headers = buildAccessGrantRedirect("opaque-access-token", "opaque-bonus-cookie");
 
-  assert.equal(headers.location, "/bonus/vault/prize");
+  assert.equal(headers.location, "/challenges/08/prize");
   assert.equal(headers.location.includes("?access="), false);
   assert.deepEqual(headers["set-cookie"], [
-    "bonus_access=opaque-access-token; Path=/bonus/vault/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600",
-    "bonus_success=opaque-bonus-cookie; Path=/bonus/vault/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600",
+    "bonus_access=opaque-access-token; Path=/challenges/08/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600",
+    "bonus_success=opaque-bonus-cookie; Path=/challenges/08/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600",
   ]);
 });
 
@@ -263,11 +263,10 @@ test("challenge-08 pages keep flag material out of static renders", () => {
     assertGlobalHeader(page);
   }
   assert(vault.includes("role: guest"));
-  assert(vault.includes("<form method=\"post\" action=\"/bonus/vault/check\">"));
+  assert(vault.includes("<form method=\"post\" action=\"/challenges/08/check\">"));
   assert.equal(vault.includes("action=\"/check\""), false);
   assert(denied.includes("현재 권한으로는 금고를 열 수 없습니다."));
-  assert(denied.includes("href=\"/bonus/vault/\""));
-  assert.equal(denied.includes("href=\"/\""), false);
+  assert(denied.includes("href=\"/challenges/08/\""));
   assert.equal(renderVaultPage("winner").includes("KDUCTF" + "{"), false);
 
   assert(prize.includes("KDUCTF" + "{current_user_flag_08}"));
@@ -292,6 +291,21 @@ test("challenge-08 derives different ticket keys for different sessions without 
     assert.equal(readSessionToken(cookie), null);
     assert.equal(sessionBindingFromCookie(cookie), null);
   }
+});
+
+test("challenge-08 issues the guest ticket for its canonical public route", async (t) => {
+  await configureBackend(t);
+  t.mock.method(globalThis, "fetch", async () =>
+    new Response(JSON.stringify({ flagId: "FLAG-08", flag: "KDUCTF" + "{guest_route_runtime}" })),
+  );
+  const port = await startServer(t, createChallengeServer);
+  const response = await send(port, "/");
+
+  assert.equal(response.status, 200);
+  const ticketCookie = response.headers["set-cookie"]?.find((value) => value.startsWith("vault_ticket="));
+  assert(ticketCookie);
+  assert.match(ticketCookie, /; Path=\/challenges\/08; SameSite=Lax$/);
+  assert(response.body.includes('action="/challenges/08/check"'));
 });
 
 test("challenge-08 preserves concurrent check redirects and consumes a grant only on an intentional prize request", async (t) => {

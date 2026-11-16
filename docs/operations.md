@@ -48,6 +48,22 @@ docker compose -f infra/docker/docker-compose.yml --env-file .env.production up 
 `PUBLIC_BASE_URL`은 브라우저가 사용하는 정확한 origin(스킴·호스트·포트)이어야 하며,
 frontend와 backend 모두 같은 값으로 실행합니다.
 
+### 참가자 URL 변경과 기존 링크
+
+현재 메인은 `/`이며 로그인 전에는 참가 안내, 로그인 후에는 문제 목록을 표시합니다.
+문제 진입 주소는 `/challenges/01/`부터 `/challenges/08/`입니다. 메인 카드와 문제의 복귀
+링크는 이 정식 경로를 사용합니다. `/submit`, `/hints`, `/login`, `/register`는 공통 경로입니다.
+
+Nginx는 예전 서비스 주소를 새 번호 주소로 308 이동시키며, 뒤의 경로와 쿼리 원문을
+보존합니다. `/hub`와 `/services/<slug>`도 기존 북마크를 위한 이동만 제공합니다.
+별도의 풀이 안내 화면을 사이에 넣지 않습니다. 대응표와 유지보수 규칙은
+[참가 동선 문서](participant-navigation.md)를 참고하세요.
+
+08번의 티켓·수령 쿠키는 Path가 바뀌므로 예전 `/bonus/vault` 경로의 쿠키를 새 경로로
+옮기지 않습니다. URL 전환 후에는 메인에서 08번을 열어 새 티켓으로 시작해야 하며,
+이전 경로에서 발급받은 수령 권한을 이어 쓰는 동작은 지원하지 않습니다. 진행 중인 대회에
+전환한다면 이 재시작 조건을 참가자에게 안내합니다. 기존 계정·제출 기록의 DB 변환은 필요하지 않습니다.
+
 ### Secret 파일 권한과 실행 사용자
 
 생성기는 디렉터리 0700, 파일 0600 권한을 사용하고 기존 파일을 보존합니다. Linux
@@ -127,17 +143,22 @@ corepack pnpm exec playwright install --with-deps --only-shell chromium
 PLAYWRIGHT_BASE_URL=http://localhost:8080 corepack pnpm test:browser
 ```
 
-Chromium에서 가입·로그인, 8개 서비스 진입, 01~06 공개 단서 확인, 07 정상 검색,
+Chromium에서 공개 메인·가입·로그인, 난이도 표시와 메인에서 8개 문제로 직접 진입,
+01~06 공개 단서 확인, 07 정상 검색,
 08 원본 guest 티켓 확인, 부분 제출·새로고침·후속 제출과 일회성 인증 화면을 검사합니다.
 최종 인증 화면 검사에는 Compose DB에서 읽은 **07·08 테스트 정답**을 사용합니다.
 이 단계는 두 문제를 브라우저에서 독립적으로 풀었다는 증거가 아닙니다.
 별도의 `smoke:challenges`가 8개 문제의 기존 풀이 경로와 사용자 격리를 검사합니다.
 
-390×844 화면 폭에서도 서비스와 검색·제출 폼을 검사합니다. 이는 Chromium의 좁은
+390×844 화면 폭에서도 메인과 문제·검색·제출 폼을 검사합니다. 모바일 제출은 입력칸 다음에
+최종 제출 버튼을 배치합니다. 이는 Chromium의 좁은
 viewport 검사이며 실제 휴대폰, Safari, 터치 조작 또는 초심자의 성공률 검사가 아닙니다.
 CI는 입력값·정답 패널·인증 식별값을 가린 스크린샷과 수치 관찰을
 `participant-browser-review` artifact로 7일간 보관합니다. 쿠키 저장 파일, 비디오와
-trace는 업로드하지 않습니다. 자세한 판정은 [참가자 관점 보고서](playability-review-2026-11-16.md)를 참고하세요.
+trace는 업로드하지 않습니다. 새 경로의 직접 진입·문제 간 연결·기존 URL 호환 검사는
+[참가 동선 문서](participant-navigation.md)의 검증 범위에 따라 확인합니다.
+이전 관찰 결과는 [참가자 관점 보고서](playability-review-2026-11-16.md)에 보존합니다.
+새 변경의 통과 여부는 해당 커밋의 CI 실행 결과로 확인하세요.
 
 ### 장애 및 migration 회귀 검증
 

@@ -21,7 +21,7 @@ import {
 } from "./server.js";
 
 const GLOBAL_HEADER_MARKUP =
-  '<header class="campusGlobalHeader"> <div class="campusGlobalHeaderInner"> <a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"> <span class="campusGlobalBrandMark">KDU</span> <span class="campusGlobalBrandText">교내 서비스</span> </a> <a class="campusGlobalHomeLink" href="/hub">전체 서비스</a> </div> </header>';
+  '<header class="campusGlobalHeader"> <div class="campusGlobalHeaderInner"> <a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"> <span class="campusGlobalBrandMark">KDU</span> <span class="campusGlobalBrandText">교내 CTF</span> </a> <a class="campusGlobalHomeLink" href="/">문제 목록</a> </div> </header>';
 
 function assertGlobalHeader(html: string): void {
   const normalized = html.replace(/\s+/g, " ").trim();
@@ -83,7 +83,7 @@ test("challenge-07 board pages keep flag material out of static renders", () => 
   for (const page of [home, search, errorPage]) {
     assertGlobalHeader(page);
   }
-  assert(home.includes("/community/board/search"));
+  assert(home.includes("/challenges/07/search"));
   assert(home.includes("name=\"q\""));
   assert.equal(home.includes("KDUCTF" + "{"), false);
   assert(errorPage.includes("요청을 처리하지 못했습니다."));

@@ -120,7 +120,7 @@ export function parseArgs(argv) {
 }
 
 export function sqliSearchPath() {
-  return `/community/board/search?q=${encodeURIComponent(SQLI_PAYLOAD)}`;
+  return `/challenges/07/search?q=${encodeURIComponent(SQLI_PAYLOAD)}`;
 }
 
 // Keep the old helper name as a source-compatible alias for callers outside the
@@ -128,11 +128,11 @@ export function sqliSearchPath() {
 export const sqliSecretPostPath = sqliSearchPath;
 
 export function readfileSearchPath() {
-  return `/community/board/search?q=${encodeURIComponent(READFILE_PAYLOAD)}`;
+  return `/challenges/07/search?q=${encodeURIComponent(READFILE_PAYLOAD)}`;
 }
 
 export function sqliteShellSearchPath() {
-  return `/community/board/search?q=${encodeURIComponent(SQLITE_SHELL_PAYLOAD)}`;
+  return `/challenges/07/search?q=${encodeURIComponent(SQLITE_SHELL_PAYLOAD)}`;
 }
 
 function hasFlagMaterial(value) {
@@ -306,7 +306,7 @@ async function submitFlag(options, cookie, flagId, flag, expectedCorrect, contex
 }
 
 async function challenge01(options, cookie) {
-  const response = await request(options, "/campus/festival/", { cookie });
+  const response = await request(options, "/challenges/01/", { cookie });
   assertStatus(response, 200, "challenge-01 page");
   assertNoStore(response, "challenge-01 page");
   const body = await readText(response);
@@ -316,36 +316,36 @@ async function challenge01(options, cookie) {
 }
 
 async function challenge02(options, cookie) {
-  const pageResponse = await request(options, "/system/status/", { cookie });
+  const pageResponse = await request(options, "/challenges/02/", { cookie });
   assertStatus(pageResponse, 200, "challenge-02 page");
   assertNoStore(pageResponse, "challenge-02 page");
   const page = await readText(pageResponse);
-  assert(page.includes("/system/status/assets/status.js"), "challenge-02 page lost its prefixed asset path");
+  assert(page.includes("/challenges/02/assets/status.js"), "challenge-02 page lost its prefixed asset path");
   assertNoFlagMaterial(page, "challenge-02 page");
 
-  const scriptResponse = await request(options, "/system/status/assets/status.js", { cookie });
+  const scriptResponse = await request(options, "/challenges/02/assets/status.js", { cookie });
   assertStatus(scriptResponse, 200, "challenge-02 status script");
   assertNoStore(scriptResponse, "challenge-02 status script");
   const script = await readText(scriptResponse);
-  assert(script.includes("/system/status/api/status"), "challenge-02 script lost its prefixed API path");
+  assert(script.includes("/challenges/02/api/status"), "challenge-02 script lost its prefixed API path");
   assert(!script.includes("api/debug"), "challenge-02 script exposed its debug path");
   assertNoFlagMaterial(script, "challenge-02 status script");
 
-  const robotsResponse = await request(options, "/system/status/robots.txt", { cookie });
+  const robotsResponse = await request(options, "/challenges/02/robots.txt", { cookie });
   assertStatus(robotsResponse, 200, "challenge-02 robots");
   assertNoStore(robotsResponse, "challenge-02 robots");
   const robots = await readText(robotsResponse);
-  assert(robots.includes("Disallow: /system/status/api/debug"), "challenge-02 robots omitted the debug route");
+  assert(robots.includes("Disallow: /challenges/02/api/debug"), "challenge-02 robots omitted the debug route");
   assertNoFlagMaterial(robots, "challenge-02 robots");
 
-  const statusResponse = await request(options, "/system/status/api/status", { cookie });
+  const statusResponse = await request(options, "/challenges/02/api/status", { cookie });
   assertStatus(statusResponse, 200, "challenge-02 status API");
   assertNoStore(statusResponse, "challenge-02 status API");
   const statusBody = await readJson(statusResponse, "challenge-02 status API");
   assert(!hasFlagMaterial(JSON.stringify(statusBody)), "challenge-02 status API exposed a flag");
   assert(statusBody.status === "ok" && Array.isArray(statusBody.services), "challenge-02 status API shape changed");
 
-  const debugResponse = await request(options, "/system/status/api/debug", { cookie });
+  const debugResponse = await request(options, "/challenges/02/api/debug", { cookie });
   assertStatus(debugResponse, 200, "challenge-02 debug API");
   assertNoStore(debugResponse, "challenge-02 debug API");
   const debugBody = await readJson(debugResponse, "challenge-02 debug API");
@@ -355,21 +355,21 @@ async function challenge02(options, cookie) {
 }
 
 async function challenge03(options, cookie) {
-  const pageResponse = await request(options, "/student/assignments/", { cookie });
+  const pageResponse = await request(options, "/challenges/03/", { cookie });
   assertStatus(pageResponse, 200, "challenge-03 page");
   assertNoStore(pageResponse, "challenge-03 page");
   const page = await readText(pageResponse);
-  assert(page.includes("/student/assignments/view?id=1"), "challenge-03 page omitted its detail link");
+  assert(page.includes("/challenges/03/view?id=1"), "challenge-03 page omitted its detail link");
   assertNoFlagMaterial(page, "challenge-03 page");
 
-  const hiddenResponse = await request(options, "/student/assignments/view?id=4", { cookie });
+  const hiddenResponse = await request(options, "/challenges/03/view?id=4", { cookie });
   assertStatus(hiddenResponse, 200, "challenge-03 hidden detail");
   assertNoStore(hiddenResponse, "challenge-03 hidden detail");
   const hidden = await readText(hiddenResponse);
   assert(hidden.includes("비공개 과제 검토"), "challenge-03 hidden detail row changed");
   const flag = extractFlag(hidden, "challenge-03 hidden detail");
 
-  const invalidResponse = await request(options, "/student/assignments/view?id=%3Cscript%3E", { cookie });
+  const invalidResponse = await request(options, "/challenges/03/view?id=%3Cscript%3E", { cookie });
   assertStatus(invalidResponse, 400, "challenge-03 invalid detail id");
   const invalid = await readText(invalidResponse);
   assertNoFlagMaterial(invalid, "challenge-03 invalid detail response");
@@ -419,14 +419,14 @@ export function runAdminBundle(script, isAdmin) {
 }
 
 async function challenge04(options, cookie) {
-  const pageResponse = await request(options, "/clubs/admin/", { cookie });
+  const pageResponse = await request(options, "/challenges/04/", { cookie });
   assertStatus(pageResponse, 200, "challenge-04 page");
   assertNoStore(pageResponse, "challenge-04 page");
   const page = await readText(pageResponse);
-  assert(page.includes("/clubs/admin/assets/app.js"), "challenge-04 page lost its prefixed asset path");
+  assert(page.includes("/challenges/04/assets/app.js"), "challenge-04 page lost its prefixed asset path");
   assertNoFlagMaterial(page, "challenge-04 page");
 
-  const scriptResponse = await request(options, "/clubs/admin/assets/app.js", { cookie });
+  const scriptResponse = await request(options, "/challenges/04/assets/app.js", { cookie });
   assertStatus(scriptResponse, 200, "challenge-04 admin script");
   assertNoStore(scriptResponse, "challenge-04 admin script");
   const script = await readText(scriptResponse);
@@ -440,31 +440,31 @@ async function challenge04(options, cookie) {
 }
 
 async function challenge05(options, cookie) {
-  const pageResponse = await request(options, "/clubs/security/", { cookie });
+  const pageResponse = await request(options, "/challenges/05/", { cookie });
   assertStatus(pageResponse, 200, "challenge-05 page");
   assertNoStore(pageResponse, "challenge-05 page");
   const page = await readText(pageResponse);
-  assert(page.includes("/clubs/security/assets/main.js"), "challenge-05 page lost its prefixed asset path");
+  assert(page.includes("/challenges/05/assets/main.js"), "challenge-05 page lost its prefixed asset path");
   assertNoFlagMaterial(page, "challenge-05 page");
 
-  const scriptResponse = await request(options, "/clubs/security/assets/main.js", { cookie });
+  const scriptResponse = await request(options, "/challenges/05/assets/main.js", { cookie });
   assertStatus(scriptResponse, 200, "challenge-05 bundle");
   assertNoStore(scriptResponse, "challenge-05 bundle");
   const script = await readText(scriptResponse);
   assert(script.includes("BUILD NOTE(deploy)"), "challenge-05 bundle omitted its deployment note");
-  assert(script.includes("/clubs/build-archive/assets/main.js.map"), "challenge-05 bundle lost its prefixed source-map link");
+  assert(!script.includes("sourceMappingURL"), "challenge-05 bundle must not send participants to another challenge");
   return extractFlag(script, "challenge-05 bundle");
 }
 
 async function challenge06(options, cookie) {
-  const pageResponse = await request(options, "/clubs/build-archive/", { cookie });
+  const pageResponse = await request(options, "/challenges/06/", { cookie });
   assertStatus(pageResponse, 200, "challenge-06 page");
   assertNoStore(pageResponse, "challenge-06 page");
   const page = await readText(pageResponse);
-  assert(page.includes("/clubs/build-archive/assets/main.js.map"), "challenge-06 page omitted its source-map link");
+  assert(page.includes("/challenges/06/assets/main.js.map"), "challenge-06 page omitted its source-map link");
   assertNoFlagMaterial(page, "challenge-06 page");
 
-  const mapResponse = await request(options, "/clubs/build-archive/assets/main.js.map", { cookie });
+  const mapResponse = await request(options, "/challenges/06/assets/main.js.map", { cookie });
   assertStatus(mapResponse, 200, "challenge-06 source map");
   assertNoStore(mapResponse, "challenge-06 source map");
   const mapText = await readText(mapResponse);
@@ -481,14 +481,14 @@ async function challenge06(options, cookie) {
 }
 
 async function challenge07(options, cookie) {
-  const pageResponse = await request(options, "/community/board/", { cookie });
+  const pageResponse = await request(options, "/challenges/07/", { cookie });
   assertStatus(pageResponse, 200, "challenge-07 page");
   assertNoStore(pageResponse, "challenge-07 page");
   const page = await readText(pageResponse);
-  assert(page.includes("/community/board/search"), "challenge-07 page omitted its search route");
+  assert(page.includes("/challenges/07/search"), "challenge-07 page omitted its search route");
   assertNoFlagMaterial(page, "challenge-07 page");
 
-  const normalResponse = await request(options, "/community/board/search?q=%EC%A4%91%EA%B0%84%EA%B3%A0%EC%82%AC", { cookie });
+  const normalResponse = await request(options, "/challenges/07/search?q=%EC%A4%91%EA%B0%84%EA%B3%A0%EC%82%AC", { cookie });
   assertStatus(normalResponse, 200, "challenge-07 normal search");
   assertNoStore(normalResponse, "challenge-07 normal search");
   const normal = await readText(normalResponse);
@@ -594,11 +594,11 @@ export function forgeVaultTicket(ticketValue) {
 }
 
 async function challenge08(options, cookie, otherCookie) {
-  const vaultResponse = await request(options, "/bonus/vault/", { cookie });
+  const vaultResponse = await request(options, "/challenges/08/", { cookie });
   assertStatus(vaultResponse, 200, "challenge-08 vault page");
   assertNoStore(vaultResponse, "challenge-08 vault page");
   const vault = await readText(vaultResponse);
-  assert(vault.includes('action="/bonus/vault/check"'), "challenge-08 form lost its prefixed check path");
+  assert(vault.includes('action="/challenges/08/check"'), "challenge-08 form lost its prefixed check path");
   assertNoFlagMaterial(vault, "challenge-08 vault page");
   const ticketCookie = mergeCookies(cookie, vaultResponse.headers);
   const guestTicket = getCookieValue(ticketCookie, "vault_ticket");
@@ -607,14 +607,14 @@ async function challenge08(options, cookie, otherCookie) {
   const forgedTicket = forgeVaultTicket(guestTicket);
   const forgedCookie = setCookieValue(ticketCookie, "vault_ticket", forgedTicket);
   const foreignTicketCookie = setCookieValue(otherCookie, "vault_ticket", forgedTicket);
-  const foreignCheckResponse = await request(options, "/bonus/vault/check", {
+  const foreignCheckResponse = await request(options, "/challenges/08/check", {
     method: "POST",
     cookie: foreignTicketCookie,
   });
   assertStatus(foreignCheckResponse, 403, "challenge-08 cross-session ticket");
   assertNoFlagMaterial(await readText(foreignCheckResponse), "challenge-08 cross-session ticket");
 
-  const checkResponse = await request(options, "/bonus/vault/check", {
+  const checkResponse = await request(options, "/challenges/08/check", {
     method: "POST",
     cookie: forgedCookie,
   });
@@ -622,17 +622,17 @@ async function challenge08(options, cookie, otherCookie) {
   const location = checkResponse.headers.get("location");
   assert(location, "challenge-08 winner check omitted its redirect");
   const redirect = new URL(location, options.baseUrl);
-  assert(redirect.pathname === "/bonus/vault/prize" && !redirect.search && !redirect.hash, "challenge-08 grant used a query token");
+  assert(redirect.pathname === "/challenges/08/prize" && !redirect.search && !redirect.hash, "challenge-08 grant used a query token");
   const setCookies = getSetCookies(checkResponse.headers);
   assert(setCookies.length >= 2, "challenge-08 winner check omitted its grant cookies");
-  assert(setCookies.every((value) => /Path=\/bonus\/vault\/prize/i.test(value)), "challenge-08 grant cookie path escaped its prefix");
+  assert(setCookies.every((value) => /Path=\/challenges\/08\/prize/i.test(value)), "challenge-08 grant cookie path escaped its prefix");
   assert(setCookies.every((value) => /HttpOnly/i.test(value) && /Secure/i.test(value) && /SameSite=Strict/i.test(value)), "challenge-08 grant cookies lost security attributes");
   const grantCookie = mergeCookies(forgedCookie, checkResponse.headers);
   assert(getCookieValue(grantCookie, "bonus_access"), "challenge-08 omitted bonus_access");
   assert(getCookieValue(grantCookie, "bonus_success"), "challenge-08 omitted bonus_success");
 
   const wrongGrantCookie = setCookieValue(grantCookie, "bonus_success", "wrong-grant-cookie");
-  const wrongPrizeResponse = await request(options, "/bonus/vault/prize", { cookie: wrongGrantCookie });
+  const wrongPrizeResponse = await request(options, "/challenges/08/prize", { cookie: wrongGrantCookie });
   assertStatus(wrongPrizeResponse, 403, "challenge-08 mismatched grant");
   const wrongPrize = await readText(wrongPrizeResponse);
   assertNoFlagMaterial(wrongPrize, "challenge-08 mismatched grant");
@@ -642,17 +642,17 @@ async function challenge08(options, cookie, otherCookie) {
     "ctf_session",
     getCookieValue(otherCookie, "ctf_session"),
   );
-  const foreignPrizeResponse = await request(options, "/bonus/vault/prize", { cookie: foreignGrantCookie });
+  const foreignPrizeResponse = await request(options, "/challenges/08/prize", { cookie: foreignGrantCookie });
   assertStatus(foreignPrizeResponse, 403, "challenge-08 cross-session grant");
   assertNoFlagMaterial(await readText(foreignPrizeResponse), "challenge-08 cross-session grant");
 
-  const prizeResponse = await request(options, "/bonus/vault/prize", { cookie: grantCookie });
+  const prizeResponse = await request(options, "/challenges/08/prize", { cookie: grantCookie });
   assertStatus(prizeResponse, 200, "challenge-08 prize");
   assertNoStore(prizeResponse, "challenge-08 prize");
   const prize = await readText(prizeResponse);
   const flag = extractFlag(prize, "challenge-08 prize");
 
-  const replayResponse = await request(options, "/bonus/vault/prize", { cookie: grantCookie });
+  const replayResponse = await request(options, "/challenges/08/prize", { cookie: grantCookie });
   assertStatus(replayResponse, 403, "challenge-08 replayed grant");
   const replay = await readText(replayResponse);
   assertNoFlagMaterial(replay, "challenge-08 replayed grant");

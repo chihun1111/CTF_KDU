@@ -208,7 +208,7 @@ export function renderAssignmentList(): string {
     <style>${SERVICE_PAGE_STYLE}</style>
   </head>
   <body>
-    <header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 서비스</span></a><a class="campusGlobalHomeLink" href="/hub">전체 서비스</a></div></header>
+    <header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 CTF</span></a><a class="campusGlobalHomeLink" href="/">문제 목록</a></div></header>
     <main class="serviceShell">
       <header class="serviceHeader">
         <p class="unit">${unitName}</p>
@@ -225,8 +225,8 @@ export function renderAssignmentList(): string {
         <table class="assignmentTable">
           <thead><tr><th>번호</th><th>과제명</th><th>제출 상태</th><th>상세 조회</th></tr></thead>
           <tbody>
-            <tr><td>1</td><td><a href="/student/assignments/view?id=1">프로그래밍 기초 과제 1</a></td><td><span class="badge">제출 완료</span></td><td><a href="/student/assignments/view?id=1">내용 보기</a></td></tr>
-            <tr><td>2</td><td><a href="/student/assignments/view?id=2">웹프로그래밍 보고서</a></td><td><span class="badge">제출 완료</span></td><td><a href="/student/assignments/view?id=2">내용 보기</a></td></tr>
+            <tr><td>1</td><td><a href="/challenges/03/view?id=1">프로그래밍 기초 과제 1</a></td><td><span class="badge">제출 완료</span></td><td><a href="/challenges/03/view?id=1">내용 보기</a></td></tr>
+            <tr><td>2</td><td><a href="/challenges/03/view?id=2">웹프로그래밍 보고서</a></td><td><span class="badge">제출 완료</span></td><td><a href="/challenges/03/view?id=2">내용 보기</a></td></tr>
           </tbody>
         </table>
       </section>
@@ -245,7 +245,7 @@ export function renderAssignmentDetail(row: AssignmentRow): string {
     <style>${SERVICE_PAGE_STYLE}</style>
   </head>
   <body>
-    <header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 서비스</span></a><a class="campusGlobalHomeLink" href="/hub">전체 서비스</a></div></header>
+    <header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 CTF</span></a><a class="campusGlobalHomeLink" href="/">문제 목록</a></div></header>
     <main class="serviceShell">
       <header class="serviceHeader">
         <p class="unit">${unitName}</p>
@@ -257,7 +257,7 @@ export function renderAssignmentDetail(row: AssignmentRow): string {
         <p><strong>소유자:</strong> ${escapeHtml(row.owner)}</p>
         <p><strong>내용:</strong></p>
         <p>${escapeHtml(row.content ?? "등록된 내용이 없습니다.")}</p>
-        <p><a href="/student/assignments/">목록으로 돌아가기</a></p>
+        <p><a href="/challenges/03/">목록으로 돌아가기</a></p>
       </section>
     </main>
   </body>
@@ -268,7 +268,7 @@ export function renderErrorPage(message: string): string {
   return `<!doctype html>
 <html lang="ko">
   <head><meta charset="utf-8" /><title>요청 오류 | ${serviceName}</title><style>${SERVICE_PAGE_STYLE}</style></head>
-  <body><header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 서비스</span></a><a class="campusGlobalHomeLink" href="/hub">전체 서비스</a></div></header><main class="serviceShell"><div class="panel"><div class="errorBox">${escapeHtml(message)}</div><p><a href="/student/assignments/">목록으로 돌아가기</a></p></div></main></body>
+  <body><header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 CTF</span></a><a class="campusGlobalHomeLink" href="/">문제 목록</a></div></header><main class="serviceShell"><div class="panel"><div class="errorBox">${escapeHtml(message)}</div><p><a href="/challenges/03/">목록으로 돌아가기</a></p></div></main></body>
 </html>`;
 }
 

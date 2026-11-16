@@ -12,7 +12,7 @@ import {
   renderAssignmentList,
 } from "./server.js";
 
-const GLOBAL_HEADER_MARKUP = '<header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 서비스</span></a><a class="campusGlobalHomeLink" href="/hub">전체 서비스</a></div></header>';
+const GLOBAL_HEADER_MARKUP = '<header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 CTF</span></a><a class="campusGlobalHomeLink" href="/">문제 목록</a></div></header>';
 
 function assertCampusGlobalHeader(html: string, localHeader = '<header class="serviceHeader">'): void {
   assert(html.includes(GLOBAL_HEADER_MARKUP));
@@ -64,7 +64,7 @@ test("challenge-03 list shows only the demo user's submissions", () => {
   assert(html.includes("프로그래밍 기초 과제 1"));
   assert(html.includes("웹프로그래밍 보고서"));
   assert.equal(html.includes("자료구조 실습 보고서"), false);
-  assert(html.includes("/student/assignments/view?id=1"));
+  assert(html.includes("/challenges/03/view?id=1"));
   assert.equal(html.includes("KDUCTF" + "{"), false);
 });
 

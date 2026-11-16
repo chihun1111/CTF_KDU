@@ -6,7 +6,7 @@ const serviceId = "service-04";
 const serviceName = "동아리 운영 현황";
 const unitName = "동아리연합회";
 const challengeId = "04";
-const PUBLIC_PREFIX = "/clubs/admin";
+const PUBLIC_PREFIX = "/challenges/04";
 
 const SERVICE_PAGE_STYLE = `
       :root { color-scheme: light; --bg: #f8fafc; --surface: #ffffff; --surface-muted: #f4f3f8; --text: #1a1c1f; --muted: #515f74; --border: #e2e8f0; --accent: #003366; --accent-strong: #001e40; --success: #166534; --warning: #92400e; }
@@ -189,7 +189,7 @@ export function renderAdminPage(): string {
     <style>${SERVICE_PAGE_STYLE}</style>
   </head>
   <body>
-    <header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 서비스</span></a><a class="campusGlobalHomeLink" href="/hub">전체 서비스</a></div></header>
+    <header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 CTF</span></a><a class="campusGlobalHomeLink" href="/">문제 목록</a></div></header>
     <main class="serviceShell">
       <header class="serviceHeader">
         <p class="unit">${unitName}</p>

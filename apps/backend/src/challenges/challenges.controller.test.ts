@@ -20,10 +20,13 @@ test("ChallengesController exposes GET /api/services behind the session guard", 
             slug: "campus-festival",
             title: "캠퍼스 축제 안내",
             department: "축제기획단",
-            updatedAt: "2026-08-24",
+            updatedAt: "2026-11-16",
             summary: "올해 미니 축제 일정과 부스 안내를 확인합니다.",
-            actionLabel: "안내 보기",
-            serviceHref: "/campus/festival/",
+            actionLabel: "문제 풀기",
+            serviceHref: "/challenges/01/",
+            difficulty: "입문",
+            difficultyLevel: 1,
+            category: "Web / Misc",
           },
         ],
       };
@@ -39,7 +42,10 @@ test("ChallengesController exposes GET /api/services behind the session guard", 
   } as AuthenticatedRequest);
 
   assert.deepEqual(events, ["list:user-1"]);
-  assert.equal(body.services[0]?.serviceHref, "/campus/festival/");
+  assert.equal(body.services[0]?.serviceHref, "/challenges/01/");
+  assert.equal(body.services[0]?.difficulty, "입문");
+  assert.equal(body.services[0]?.difficultyLevel, 1);
+  assert.equal(body.services[0]?.category, "Web / Misc");
   assert.equal("guideHref" in (body.services[0] ?? {}), false);
   assert.equal("servicePath" in (body.services[0] ?? {}), false);
   assert.equal(JSON.stringify(body).includes("/services/"), false);

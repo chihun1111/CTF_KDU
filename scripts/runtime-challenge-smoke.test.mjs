@@ -52,7 +52,7 @@ test("parseArgs keeps the current smoke options and rejects invalid participant 
 
 test("challenge 07 helpers target the current board search and escape checks", () => {
   assert.equal(sqliSecretPostPath(), sqliSearchPath());
-  assert.match(decodeURIComponent(sqliSearchPath()), /\/community\/board\/search\?q=.*UNION SELECT id, flag, source FROM flags/);
+  assert.match(decodeURIComponent(sqliSearchPath()), /\/challenges\/07\/search\?q=.*UNION SELECT id, flag, source FROM flags/);
   assert.match(decodeURIComponent(readfileSearchPath()), /readfile\('\/etc\/passwd'\)/);
   assert.match(decodeURIComponent(sqliteShellSearchPath()), /\.shell echo runtime-challenge-smoke/);
 });
@@ -100,7 +100,7 @@ test("cookie helpers retain only cookie pairs and merge Set-Cookie updates", () 
     getSetCookie() {
       return [
         "ctf_session=session-fixture; HttpOnly; Path=/",
-        "vault_ticket=ticket-fixture; Path=/bonus/vault",
+        "vault_ticket=ticket-fixture; Path=/challenges/08",
       ];
     },
   };

@@ -300,14 +300,14 @@ const ADMIN_ENDPOINTS = [
       assert(Array.isArray(body), "challenge status is not an array");
       assert(body.length === 8, `expected 8 challenge status rows, got ${body.length}`);
       const expectedPaths = [
-        "/campus/festival/",
-        "/system/status/",
-        "/student/assignments/",
-        "/clubs/admin/",
-        "/clubs/security/",
-        "/clubs/build-archive/",
-        "/community/board/",
-        "/bonus/vault/",
+        "/challenges/01/",
+        "/challenges/02/",
+        "/challenges/03/",
+        "/challenges/04/",
+        "/challenges/05/",
+        "/challenges/06/",
+        "/challenges/07/",
+        "/challenges/08/",
       ];
       assert(
         body.every(

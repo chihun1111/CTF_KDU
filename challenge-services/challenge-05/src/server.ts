@@ -6,7 +6,7 @@ const serviceId = "service-05";
 const serviceName = "동아리 홍보 페이지";
 const unitName = "정보보호동아리";
 const challengeId = "05";
-const PUBLIC_PREFIX = "/clubs/security";
+const PUBLIC_PREFIX = "/challenges/05";
 
 const SERVICE_PAGE_STYLE = `
       :root { color-scheme: light; --bg: #f8fafc; --surface: #ffffff; --surface-muted: #f4f3f8; --text: #1a1c1f; --muted: #515f74; --border: #e2e8f0; --accent: #003366; --accent-strong: #001e40; --success: #166534; --warning: #92400e; }
@@ -186,11 +186,11 @@ export function renderPromoPage(): string {
   <body>
     <header class="campusGlobalHeader">
       <div class="campusGlobalHeaderInner">
-        <a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기">
+        <a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기">
           <span class="campusGlobalBrandMark">KDU</span>
-          <span class="campusGlobalBrandText">교내 서비스</span>
+          <span class="campusGlobalBrandText">교내 CTF</span>
         </a>
-        <a class="campusGlobalHomeLink" href="/hub">전체 서비스</a>
+        <a class="campusGlobalHomeLink" href="/">문제 목록</a>
       </div>
     </header>
     <main class="serviceShell">
@@ -228,7 +228,6 @@ document.addEventListener("DOMContentLoaded", function () {
   if (hero) hero.setAttribute("data-banner", "legacy-banner-v1");
 });
 // BUILD NOTE(deploy): legacy banner id kept for rollback: ${flag}
-//# sourceMappingURL=/clubs/build-archive/assets/main.js.map
 `;
 }
 

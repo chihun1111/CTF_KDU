@@ -21,7 +21,7 @@ test("participant service cards link directly to the serviceHref returned by the
 
 test("the participant hub flow does not link through the service guide route", () => {
   for (const relativePath of [
-    "apps/frontend/app/hub/page.tsx",
+    "apps/frontend/app/page.tsx",
     "apps/frontend/app/components/services/service-directory-grid.tsx",
     "apps/frontend/app/components/services/service-directory-card.tsx",
   ]) {

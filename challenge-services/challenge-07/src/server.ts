@@ -372,11 +372,11 @@ function renderShell(title: string, bodyContent: string): string {
   <body>
     <header class="campusGlobalHeader">
       <div class="campusGlobalHeaderInner">
-        <a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기">
+        <a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기">
           <span class="campusGlobalBrandMark">KDU</span>
-          <span class="campusGlobalBrandText">교내 서비스</span>
+          <span class="campusGlobalBrandText">교내 CTF</span>
         </a>
-        <a class="campusGlobalHomeLink" href="/hub">전체 서비스</a>
+        <a class="campusGlobalHomeLink" href="/">문제 목록</a>
       </div>
     </header>
     <main class="serviceShell">${bodyContent}</main>
@@ -392,7 +392,7 @@ export function renderBoardHome(): string {
         <p class="unit">${unitName}</p>
         <h1>${serviceName}</h1>
         <p>교내 자유게시판입니다. 제목으로 게시글을 검색할 수 있습니다.</p>
-        <form class="search" action="/community/board/search" method="get">
+        <form class="search" action="/challenges/07/search" method="get">
           <input type="text" name="q" placeholder="게시글 제목을 입력하세요" aria-label="검색어" />
           <button type="submit">검색</button>
         </form>
@@ -402,9 +402,9 @@ export function renderBoardHome(): string {
         <table class="boardTable">
           <thead><tr><th>구분</th><th>제목</th><th>작성 부서</th><th>등록일</th><th>조회</th></tr></thead>
           <tbody>
-            <tr><td><span class="noticeBadge">공지</span></td><td><a href="/community/board/search?q=%EC%A4%91%EA%B0%84%EA%B3%A0%EC%82%AC">중간고사 일정 안내</a></td><td>교무과</td><td>2026. 8. 21.</td><td>184</td></tr>
-            <tr><td><span class="noticeBadge">안내</span></td><td><a href="/community/board/search?q=%EC%B6%95%EC%A0%9C">교내 미니 축제 참가 안내</a></td><td>축제기획단</td><td>2026. 8. 19.</td><td>327</td></tr>
-            <tr><td>일반</td><td><a href="/community/board/search?q=%EA%B3%BC%EC%A0%9C">프로그래밍 과제 안내</a></td><td>컴퓨터공학과</td><td>2026. 8. 17.</td><td>96</td></tr>
+            <tr><td><span class="noticeBadge">공지</span></td><td><a href="/challenges/07/search?q=%EC%A4%91%EA%B0%84%EA%B3%A0%EC%82%AC">중간고사 일정 안내</a></td><td>교무과</td><td>2026. 8. 21.</td><td>184</td></tr>
+            <tr><td><span class="noticeBadge">안내</span></td><td><a href="/challenges/07/search?q=%EC%B6%95%EC%A0%9C">교내 미니 축제 참가 안내</a></td><td>축제기획단</td><td>2026. 8. 19.</td><td>327</td></tr>
+            <tr><td>일반</td><td><a href="/challenges/07/search?q=%EA%B3%BC%EC%A0%9C">프로그래밍 과제 안내</a></td><td>컴퓨터공학과</td><td>2026. 8. 17.</td><td>96</td></tr>
           </tbody>
         </table>
       </section>
@@ -429,7 +429,7 @@ export function renderSearchResults(query: string, rows: Array<Record<string, un
         <p class="unit">${unitName}</p>
         <h1>검색 결과</h1>
         <p>검색어: ${escapeHtml(query)}</p>
-        <form class="search" action="/community/board/search" method="get">
+        <form class="search" action="/challenges/07/search" method="get">
           <input type="text" name="q" value="${escapeHtml(query)}" aria-label="검색어" />
           <button type="submit">검색</button>
         </form>
@@ -448,7 +448,7 @@ export function renderErrorPage(): string {
   return renderShell(
     "요청 오류",
     `
-      <div class="panel"><div class="errorBox">요청을 처리하지 못했습니다.</div><p><a href="/community/board/">게시판으로 돌아가기</a></p></div>
+      <div class="panel"><div class="errorBox">요청을 처리하지 못했습니다.</div><p><a href="/challenges/07/">게시판으로 돌아가기</a></p></div>
     `,
   );
 }

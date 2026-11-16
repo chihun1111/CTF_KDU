@@ -79,7 +79,7 @@ test("summary and service status use measured health and preserve other results 
     {
       async getSummaryCounts() { return { registeredUserCount: 1, submittedUserCount: 0, clearedUserCount: 0, finalSubmissionCount: 0 }; },
       async listChallengeStatus(now) {
-        return [{ challengeId: "03", flagId: "FLAG-03", title: "Service", servicePath: "/student/assignments/", health: "ok", visible: true, solvedCount: 0, lastHealthcheckAt: now.toISOString() }];
+        return [{ challengeId: "03", flagId: "FLAG-03", title: "Service", servicePath: "/challenges/03/", health: "ok", visible: true, solvedCount: 0, lastHealthcheckAt: now.toISOString() }];
       },
       async listParticipants() { throw new Error("unused"); },
       async listSubmissions() { throw new Error("unused"); },

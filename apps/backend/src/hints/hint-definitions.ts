@@ -159,7 +159,7 @@ export const HINT_CHALLENGES: readonly HintChallengeDefinition[] = [
         key: "first",
         label: "1차 힌트",
         releaseTiming: "시작 +120분",
-        text: "홍보 페이지의 자바스크립트 마지막 줄은 어디를 가리키고 있나요?",
+        text: "이 보관함에서 열람할 수 있는 파일의 형식과 내용을 살펴보세요.",
       },
       {
         stageId: "06:second",

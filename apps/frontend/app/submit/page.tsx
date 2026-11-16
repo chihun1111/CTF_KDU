@@ -32,8 +32,8 @@ export default async function SubmitPage() {
             <p className="lede">확보한 플래그를 입력해 현재 진행 상황을 확인하고, 8개 항목을 모두 완료해 주세요.</p>
           </div>
           <nav className="headerActions" aria-label="주요 이동">
-            <Link className="secondaryLink" href="/hub">
-              허브
+            <Link className="secondaryLink" href="/">
+              문제 목록
             </Link>
             <LogoutButton />
           </nav>

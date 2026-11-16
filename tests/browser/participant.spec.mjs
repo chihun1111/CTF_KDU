@@ -7,6 +7,11 @@ import { buildFlagQuery } from '../../scripts/runtime-clear-smoke.mjs';
 
 const outputDir = 'artifacts/browser';
 const services = [
+  '/challenges/01/', '/challenges/02/', '/challenges/03/', '/challenges/04/',
+  '/challenges/05/', '/challenges/06/', '/challenges/07/', '/challenges/08/',
+];
+const difficulties = ['입문', '초급', '초급', '초급', '입문', '초급', '중급', '고급'];
+const legacyServices = [
   '/campus/festival/', '/system/status/', '/student/assignments/', '/clubs/admin/',
   '/clubs/security/', '/clubs/build-archive/', '/community/board/', '/bonus/vault/',
 ];
@@ -39,24 +44,54 @@ async function screenshot(page, name, masks = []) {
 async function register(page) {
   const studentId = String(randomInt(8800000, 8899999));
   const password = `Browser-${randomBytes(18).toString('base64url')}`;
-  await page.goto('/register');
+  const welcome = await page.goto('/');
+  expect(welcome.status(), 'the public main page opens directly').toBe(200);
+  await expect(page.getByRole('heading', { name: '교내 CTF에 도전하세요', exact: true })).toBeVisible();
+  await layout(page, 'public main layout');
+  await screenshot(page, page.viewportSize().width < 700 ? 'mobile-welcome' : 'desktop-welcome');
+  await page.locator('a[href="/register"]').first().click();
+  await expect(page).toHaveURL(/\/register$/);
   await expect(page.getByRole('button', { name: '회원가입', exact: true })).toBeDisabled();
   await page.getByLabel(/^학번/).fill(studentId);
   await page.getByLabel(/^비밀번호/).fill(password);
   await page.getByRole('checkbox', { name: '[필수] 서비스 이용과 보안 운영 로그 수집에 동의합니다.' }).check();
   await page.getByRole('checkbox', { name: '[필수] 로그인 유지에 필요한 쿠키 사용에 동의합니다.' }).check();
   await page.getByRole('button', { name: '회원가입', exact: true }).click();
-  await expect(page).toHaveURL(/\/hub$/);
+  await expect(page).toHaveURL((url) => url.pathname === '/');
   await expect(page.locator('.serviceDirectoryCard')).toHaveCount(8);
   record('registration with required consents only succeeds');
   return { studentId, password };
 }
 
 async function openService(page, index) {
-  await page.goto('/hub');
-  await page.locator(`.serviceDirectoryCard a[href="${services[index]}"]`).click();
-  await expect(page).toHaveURL(new RegExp(`${services[index]}$`));
-  await expect(page.getByRole('link', { name: '전체 서비스', exact: true })).toBeVisible();
+  await page.goto('/');
+  const navigations = [];
+  const otherChallengeRequests = [];
+  const track = (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) navigations.push(path);
+    if (/^\/challenges\/0[1-8]\//.test(path) && !path.startsWith(services[index])) otherChallengeRequests.push(path);
+  };
+  page.on('request', track);
+  try {
+    const destination = page.waitForResponse((response) => response.request().isNavigationRequest()
+      && new URL(response.url()).pathname === services[index]);
+    await page.locator(`.serviceDirectoryCard a[href="${services[index]}"]`).click();
+    const response = await destination;
+    expect(response.status(), 'the card opens the actual challenge without a redirect').toBe(200);
+    expect(response.request().redirectedFrom()).toBeNull();
+    await expect(page).toHaveURL((url) => url.pathname === services[index]);
+  } finally {
+    page.off('request', track);
+  }
+  expect(navigations, 'one main-page click produces exactly one challenge navigation').toEqual([services[index]]);
+  expect(otherChallengeRequests, 'a challenge does not load another challenge').toEqual([]);
+  await expect(page.getByRole('link', { name: '문제 목록', exact: true })).toBeVisible();
+  const linkedPaths = await page.locator('a[href], form[action], script[src]').evaluateAll((elements) => elements
+    .map((element) => element.getAttribute('href') ?? element.getAttribute('action') ?? element.getAttribute('src'))
+    .filter((path) => /^\/challenges\/0[1-8]\//.test(path)));
+  expect(linkedPaths.every((path) => path.startsWith(services[index])), 'all challenge links stay inside this problem').toBe(true);
+  record('direct main-to-challenge navigation', { challenge: index + 1, navigations: navigations.length });
 }
 
 async function publicAsset(page, path) {
@@ -131,8 +166,46 @@ test('desktop participant journey: discovery, partial grading and fixture-assist
     await page.getByLabel(/^학번/).fill(account.studentId);
     await page.getByLabel(/^비밀번호/).fill(account.password);
     await page.getByRole('button', { name: '로그인', exact: true }).click();
-    await expect(page).toHaveURL(/\/hub$/);
+    await expect(page).toHaveURL((url) => url.pathname === '/');
     record('logout and login preserve browser session flow');
+  });
+
+  await test.step('difficulty labels and filters help select an independent problem', async () => {
+    const cards = page.locator('.serviceDirectoryCard');
+    for (let index = 0; index < services.length; index += 1) {
+      await expect(cards.nth(index).locator('.difficultyBadge')).toHaveText(difficulties[index]);
+      await expect(cards.nth(index).locator('a')).toHaveCount(1);
+      await expect(cards.nth(index).locator('a')).toHaveAttribute('href', services[index]);
+    }
+    const filters = page.getByRole('group', { name: '난이도 필터', exact: true });
+    await filters.getByRole('button', { name: '입문', exact: true }).click();
+    await expect(cards).toHaveCount(2);
+    expect(await cards.locator('a').evaluateAll((links) => links.map((link) => link.getAttribute('href')))).toEqual([services[0], services[4]]);
+    await filters.getByRole('button', { name: '고급', exact: true }).click();
+    await expect(cards).toHaveCount(1);
+    await expect(cards.locator('a')).toHaveAttribute('href', services[7]);
+    await filters.getByRole('button', { name: '전체', exact: true }).click();
+    await expect(cards).toHaveCount(8);
+    record('all four difficulty levels render; introductory and advanced filters return the correct cards');
+  });
+
+  await test.step('old bookmarks redirect once and canonical links need no redirect', async () => {
+    for (let index = 0; index < services.length; index += 1) {
+      const old = await page.request.get(legacyServices[index], { maxRedirects: 0 });
+      expect(old.status()).toBe(308);
+      expect(old.headers().location).toBe(services[index]);
+      const bare = await page.request.get(services[index].slice(0, -1), { maxRedirects: 0 });
+      expect(bare.status()).toBe(308);
+      expect(bare.headers().location).toBe(services[index]);
+    }
+    const query = '?q=%EC%B6%95%EC%A0%9C&from=bookmark';
+    const search = await page.request.get(`/community/board/search${query}`, { maxRedirects: 0 });
+    expect(search.status()).toBe(308);
+    expect(search.headers().location).toBe(`/challenges/07/search${query}`);
+    const previousMain = await page.goto('/hub');
+    expect(previousMain.status()).toBe(200);
+    await expect(page).toHaveURL((url) => url.pathname === '/');
+    record('legacy entry URLs, raw query strings and missing trailing slashes normalize to the canonical routes');
   });
 
   await test.step('01: read the delivered document', async () => {
@@ -159,8 +232,8 @@ test('desktop participant journey: discovery, partial grading and fixture-assist
   await test.step('03: inspect linked assignment details and neighboring records', async () => {
     await openService(page, 2);
     await page.getByRole('link', { name: '프로그래밍 기초 과제 1', exact: true }).click();
-    await expect(page).toHaveURL(/\/student\/assignments\/view\?id=1$/);
-    for (const id of [2, 3, 4]) await page.goto(`/student/assignments/view?id=${id}`);
+    await expect(page).toHaveURL(/\/challenges\/03\/view\?id=1$/);
+    for (const id of [2, 3, 4]) await page.goto(`/challenges/03/view?id=${id}`);
     flags[2] = oneFlag(await page.locator('body').innerText(), '03 detail');
   });
 
@@ -185,7 +258,7 @@ test('desktop participant journey: discovery, partial grading and fixture-assist
     const script = await publicAsset(page, await page.locator('script[src]').first().getAttribute('src'));
     expect(script.status).toBe(200);
     flags[4] = oneFlag(script.text, '05 linked bundle');
-    expect(script.text.includes('/clubs/build-archive/assets/main.js.map')).toBe(true);
+    expect(script.text.includes('sourceMappingURL'), '05 has no cross-challenge source-map link').toBe(false);
     await openService(page, 5);
     const mapPath = await page.getByRole('link', { name: 'main.js.map', exact: true }).getAttribute('href');
     const map = await publicAsset(page, mapPath);
@@ -224,7 +297,7 @@ test('desktop participant journey: discovery, partial grading and fixture-assist
   });
 
   await test.step('hint navigation and partial submission work without losing progress on reload', async () => {
-    await page.getByRole('link', { name: '전체 서비스', exact: true }).click();
+    await page.getByRole('link', { name: '문제 목록', exact: true }).click();
     await page.getByRole('link', { name: '힌트 · 운영 공지', exact: true }).click();
     await expect(page).toHaveURL(/\/hints$/);
     await expect(page.getByRole('heading', { name: '공개 힌트', exact: true })).toBeVisible();
@@ -298,7 +371,7 @@ test('mobile viewport: registration, all service entry pages, search and submit 
         expect(visibility.scrollLeft, 'assignment list starts without horizontal scrolling').toBe(0);
         expect(visibility.fullyWithinVisibleColumns, 'the primary detail link is visible in the initial columns').toBe(true);
         await detail.click();
-        await expect(page).toHaveURL(/\/student\/assignments\/view\?id=1$/);
+        await expect(page).toHaveURL(/\/challenges\/03\/view\?id=1$/);
         await expect(page.getByRole('heading', { name: '프로그래밍 기초 과제 1', exact: true })).toBeVisible();
         record('mobile 03 detail opens from the initially visible assignment title');
       }
@@ -310,7 +383,7 @@ test('mobile viewport: registration, all service entry pages, search and submit 
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await layout(page, 'mobile search results');
   await screenshot(page, 'mobile-07-search');
-  await page.getByRole('link', { name: '전체 서비스', exact: true }).click();
+  await page.getByRole('link', { name: '문제 목록', exact: true }).click();
   await page.getByRole('link', { name: '제출 페이지', exact: true }).click();
   await page.locator('.flagField input').first().fill('incomplete');
   await page.getByRole('button', { name: '최종 제출', exact: true }).click();

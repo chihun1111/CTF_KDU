@@ -1,3 +1,6 @@
+import type { PublicService } from "@campus-ctf/shared";
+export type { PublicService, ChallengeDifficulty, ChallengeDifficultyLevel } from "@campus-ctf/shared";
+
 export const FLAG_IDS = [
   "FLAG-01",
   "FLAG-02",
@@ -25,17 +28,6 @@ export type ChallengeProgress = {
   requiredCount: number;
   cleared: boolean;
   resultsByFlagId: Partial<Record<FlagId, { correct: boolean }>>;
-};
-
-export type PublicService = {
-  id: string;
-  slug: string;
-  title: string;
-  department: string;
-  updatedAt: string;
-  summary: string;
-  actionLabel: string;
-  serviceHref: string;
 };
 
 export type ServiceHub = {

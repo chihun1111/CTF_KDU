@@ -37,8 +37,8 @@ export default async function HintsPage() {
                 운영 화면
               </Link>
             ) : null}
-            <Link className="secondaryLink" href="/hub">
-              허브
+            <Link className="secondaryLink" href="/">
+              문제 목록
             </Link>
             <Link className="primaryLink" href="/submit">
               제출 페이지

@@ -8,7 +8,7 @@ const serviceName = "특별상 수령 안내";
 const unitName = "축제준비위원회";
 const challengeId = "08";
 const ACCESS_GRANT_TTL_MS = 10 * 60 * 1000;
-const PUBLIC_PREFIX = "/bonus/vault";
+const PUBLIC_PREFIX = "/challenges/08";
 
 const SERVICE_PAGE_STYLE = `
       :root { color-scheme: light; --bg: #f8fafc; --surface: #ffffff; --surface-muted: #f4f3f8; --text: #1a1c1f; --muted: #515f74; --border: #e2e8f0; --accent: #003366; --accent-strong: #001e40; --success: #166534; --warning: #92400e; }
@@ -388,8 +388,8 @@ export function buildAccessGrantRedirect(token: string, bonusCookieValue: string
   return {
     location: `${PUBLIC_PREFIX}/prize`,
     "set-cookie": [
-      `bonus_access=${token}; Path=/bonus/vault/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600`,
-      `bonus_success=${bonusCookieValue}; Path=/bonus/vault/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600`,
+      `bonus_access=${token}; Path=${PUBLIC_PREFIX}/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600`,
+      `bonus_success=${bonusCookieValue}; Path=${PUBLIC_PREFIX}/prize; HttpOnly; Secure; SameSite=Strict; Max-Age=600`,
     ],
   };
 }
@@ -417,11 +417,11 @@ function renderShell(title: string, bodyContent: string): string {
   <body>
     <header class="campusGlobalHeader">
       <div class="campusGlobalHeaderInner">
-        <a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기">
+        <a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기">
           <span class="campusGlobalBrandMark">KDU</span>
-          <span class="campusGlobalBrandText">교내 서비스</span>
+          <span class="campusGlobalBrandText">교내 CTF</span>
         </a>
-        <a class="campusGlobalHomeLink" href="/hub">전체 서비스</a>
+        <a class="campusGlobalHomeLink" href="/">문제 목록</a>
       </div>
     </header>
     <main class="serviceShell">${bodyContent}</main>
@@ -591,7 +591,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       // 티켓은 참가자가 내용을 볼 수 있어야 하므로 HttpOnly를 붙이지 않습니다.
       // 위조 방지는 서명의 역할이며, 이 문제의 목표는 그 서명을 확장해 넘는 것입니다.
       sendPage(response, 200, renderVaultPage("guest"), {
-        "set-cookie": `vault_ticket=${encodeTicketValue(context.key, buildGuestPayload())}; Path=/bonus/vault; SameSite=Lax`,
+        "set-cookie": `vault_ticket=${encodeTicketValue(context.key, buildGuestPayload())}; Path=${PUBLIC_PREFIX}; SameSite=Lax`,
       });
       return;
     }

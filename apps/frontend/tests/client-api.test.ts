@@ -33,7 +33,7 @@ test("post-auth navigation requires an established cookie and preserves role-awa
   const upstream = mock.method(globalThis, "fetch", async () => Response.json({ authenticated: false }));
   await assert.rejects(authenticatedDestination, SessionCookieUnavailableError);
   upstream.mock.mockImplementation(async () => Response.json({ authenticated: true, role: "participant" }));
-  assert.equal(await authenticatedDestination(), "/hub");
+  assert.equal(await authenticatedDestination(), "/");
   upstream.mock.mockImplementation(async () => Response.json({ authenticated: true, role: "admin" }));
   assert.equal(await authenticatedDestination(), "/admin/operations");
   upstream.mock.mockImplementation(async () => Response.json({ authenticated: "false", role: "admin" }));

@@ -190,7 +190,7 @@ test("AdminReadController exposes challenge status, system health, and aggregate
           challengeId: "01",
           flagId: "FLAG-01",
           title: "캠퍼스 축제 안내",
-          servicePath: "/campus/festival/",
+          servicePath: "/challenges/01/",
           health: "ok",
           visible: true,
           solvedCount: 0,

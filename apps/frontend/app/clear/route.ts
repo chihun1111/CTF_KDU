@@ -33,7 +33,7 @@ function unavailableCertificate(): NextResponse {
 <h1>클리어 인증 화면을 불러올 수 없습니다.</h1>
 <p>인증 응답을 확인하지 못했습니다. 이 요청은 자동으로 다시 전송하지 않습니다.</p>
 <p>인증 화면은 한 번만 열립니다. 제출 화면에서 8개 플래그를 다시 제출하면 새 인증 화면을 열 수 있습니다.</p>
-<p><a href="/submit">제출 화면으로 이동</a> · <a href="/hub">전체 서비스로 이동</a></p>
+<p><a href="/submit">제출 화면으로 이동</a> · <a href="/">문제 목록으로 이동</a></p>
 </main></body></html>`, 502);
 }
 

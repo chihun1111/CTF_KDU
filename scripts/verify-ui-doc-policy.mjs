@@ -56,10 +56,10 @@ function requireGlobalHeader(filePath, label) {
   if (!source.includes("KDU")) {
     failures.push(`${label} must include the KDU brand mark`);
   }
-  if (!source.includes("교내 서비스")) {
+  if (!source.includes("교내 CTF")) {
     failures.push(`${label} must include the campus service brand text`);
   }
-  if (!source.includes("전체 서비스")) {
+  if (!source.includes("문제 목록")) {
     failures.push(`${label} must include the all-services link text`);
   }
 
@@ -68,12 +68,12 @@ function requireGlobalHeader(filePath, label) {
     const tag = match[0];
     return (
       /(?:class|className)=["']campusGlobalBrand["']/.test(tag) &&
-      /href=["']\/hub["']/.test(tag) &&
+      /href=["']\/["']/.test(tag) &&
       /aria-label=["'][^"']+["']/.test(tag)
     );
   });
   if (!brandTag) {
-    failures.push(`${label} must expose an aria-labelled campusGlobalBrand link to /hub`);
+    failures.push(`${label} must expose an aria-labelled campusGlobalBrand link to /`);
   } else {
     const brandStart = brandTag.index ?? 0;
     const closingTag = brandTag[0].startsWith("<Link") ? "</Link>" : "</a>";
@@ -82,24 +82,24 @@ function requireGlobalHeader(filePath, label) {
     if (!/campusGlobalBrandMark[\s\S]*KDU/.test(brandMarkup)) {
       failures.push(`${label} must put KDU inside campusGlobalBrandMark`);
     }
-    if (!/campusGlobalBrandText[\s\S]*교내 서비스/.test(brandMarkup)) {
-      failures.push(`${label} must put 교내 서비스 inside campusGlobalBrandText`);
+    if (!/campusGlobalBrandText[\s\S]*교내 CTF/.test(brandMarkup)) {
+      failures.push(`${label} must put 교내 CTF inside campusGlobalBrandText`);
     }
   }
 
   const homeTag = openingTags.find((match) => {
     const tag = match[0];
-    return /(?:class|className)=["']campusGlobalHomeLink["']/.test(tag) && /href=["']\/hub["']/.test(tag);
+    return /(?:class|className)=["']campusGlobalHomeLink["']/.test(tag) && /href=["']\/["']/.test(tag);
   });
   if (!homeTag) {
-    failures.push(`${label} must expose campusGlobalHomeLink to /hub`);
+    failures.push(`${label} must expose campusGlobalHomeLink to /`);
   } else {
     const homeStart = homeTag.index ?? 0;
     const closingTag = homeTag[0].startsWith("<Link") ? "</Link>" : "</a>";
     const homeEnd = source.indexOf(closingTag, homeStart);
     const homeMarkup = source.slice(homeStart, homeEnd < 0 ? source.length : homeEnd);
-    if (!homeMarkup.includes("전체 서비스")) {
-      failures.push(`${label} campusGlobalHomeLink must say 전체 서비스`);
+    if (!homeMarkup.includes("문제 목록")) {
+      failures.push(`${label} campusGlobalHomeLink must say 문제 목록`);
     }
   }
 }
@@ -153,11 +153,11 @@ requireText("apps/frontend/app/clear/preview/page.tsx", "ClearPreviewPage", "cle
 requireText("apps/frontend/app/clear/preview/page.tsx", "실제 인증에서만 표시", "clear preview privacy placeholder");
 forbidText("apps/frontend/app/clear/preview/page.tsx", "2622022", "clear preview raw sample student id");
 requireText("apps/frontend/app/clear/preview/page.tsx", "session.role !== \"admin\"", "clear preview admin guard");
-requireText("apps/frontend/app/hub/page.tsx", "portalHero", "participant hub service directory");
-requireText("apps/frontend/app/hub/page.tsx", "serviceDirectory", "participant hub service directory");
+requireText("apps/frontend/app/page.tsx", "portalHero", "participant hub service directory");
+requireText("apps/frontend/app/page.tsx", "serviceDirectory", "participant hub service directory");
 requireGlobalHeader("apps/frontend/app/components/campus-global-header.tsx", "frontend global header component");
 for (const participantHeaderPage of [
-  "apps/frontend/app/hub/page.tsx",
+  "apps/frontend/app/page.tsx",
   "apps/frontend/app/hints/page.tsx",
   "apps/frontend/app/submit/page.tsx",
 ]) {
@@ -170,7 +170,7 @@ requireText(
   "participant service card direct navigation",
 );
 for (const participantServiceNavigationFile of [
-  "apps/frontend/app/hub/page.tsx",
+  "apps/frontend/app/page.tsx",
   "apps/frontend/app/components/services/service-directory-grid.tsx",
   "apps/frontend/app/components/services/service-directory-card.tsx",
 ]) {

@@ -186,11 +186,11 @@ export function renderArchivePage(): string {
   <body>
     <header class="campusGlobalHeader">
       <div class="campusGlobalHeaderInner">
-        <a class="campusGlobalBrand" href="/hub" aria-label="교내 서비스 목록으로 돌아가기">
+        <a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기">
           <span class="campusGlobalBrandMark">KDU</span>
-          <span class="campusGlobalBrandText">교내 서비스</span>
+          <span class="campusGlobalBrandText">교내 CTF</span>
         </a>
-        <a class="campusGlobalHomeLink" href="/hub">전체 서비스</a>
+        <a class="campusGlobalHomeLink" href="/">문제 목록</a>
       </div>
     </header>
     <main class="serviceShell">
@@ -205,7 +205,7 @@ export function renderArchivePage(): string {
         <table>
           <thead><tr><th>형식</th><th>파일명</th><th>수정일</th><th>빌드</th><th>열람 상태</th></tr></thead>
           <tbody>
-            <tr><td><span class="fileType">MAP</span></td><td><a href="/clubs/build-archive/assets/main.js.map">main.js.map</a></td><td>2026. 3. 18.</td><td>2026-03 배포본</td><td><span class="accessBadge">열람 가능</span></td></tr>
+            <tr><td><span class="fileType">MAP</span></td><td><a href="/challenges/06/assets/main.js.map">main.js.map</a></td><td>2026. 3. 18.</td><td>2026-03 배포본</td><td><span class="accessBadge">열람 가능</span></td></tr>
             <tr><td><span class="fileType">ZIP</span></td><td>legacy-bundle.zip</td><td>2025. 12. 22.</td><td>2025-12 배포본</td><td>열람 제한</td></tr>
             <tr><td><span class="fileType">TXT</span></td><td>release-notes.txt</td><td>2026. 3. 18.</td><td>-</td><td>요약 문서</td></tr>
           </tbody>

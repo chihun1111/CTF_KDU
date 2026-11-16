@@ -67,12 +67,12 @@ export class SessionCookieUnavailableError extends Error {
 }
 
 /** A successful credential request is insufficient when the browser rejected its cookie. */
-export async function authenticatedDestination(): Promise<"/admin/operations" | "/hub"> {
+export async function authenticatedDestination(): Promise<"/admin/operations" | "/"> {
   const session = await getClientSession();
   if (!session.authenticated) {
     throw new SessionCookieUnavailableError();
   }
-  return session.role === "admin" ? "/admin/operations" : "/hub";
+  return session.role === "admin" ? "/admin/operations" : "/";
 }
 
 export async function logoutParticipant(): Promise<void> {
