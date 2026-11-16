@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { requestNavigation } from "./runtime-navigation.mjs";
 import { runInNewContext } from "node:vm";
 
 const FINAL_FLAG_IDS = [
@@ -232,6 +233,9 @@ async function request(options, path, init = {}) {
   }
   if (cookie) {
     headers.set("cookie", cookie);
+  }
+  if (path === "/clear" && (fetchInit.method ?? "GET").toUpperCase() === "GET") {
+    return requestNavigation(`${options.baseUrl}${path}`, { headers, signal: fetchInit.signal });
   }
   return fetch(`${options.baseUrl}${path}`, {
     ...fetchInit,

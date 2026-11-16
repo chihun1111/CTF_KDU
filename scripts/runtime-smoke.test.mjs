@@ -199,6 +199,13 @@ test("runtime-smoke accepts the current services response shape", async () => {
     }
 
     if (url.pathname === "/clear") {
+      if (request.headers["sec-fetch-site"] !== "same-origin"
+        || request.headers["sec-fetch-dest"] !== "document"
+        || request.headers["sec-fetch-mode"] !== "navigate"
+        || !request.headers.cookie?.includes("ctf_session=mock-session")) {
+        response.writeHead(403).end();
+        return;
+      }
       response.writeHead(302, { location: "/submit" }).end();
       return;
     }

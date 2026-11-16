@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { requestNavigation } from "./runtime-navigation.mjs";
 
 const FINAL_FLAG_IDS = ["FLAG-01", "FLAG-02", "FLAG-03", "FLAG-04", "FLAG-05", "FLAG-06", "FLAG-07", "FLAG-08"];
 
@@ -177,6 +178,9 @@ async function request(options, path, init = {}) {
   }
   if (init.cookie) {
     headers.set("cookie", init.cookie);
+  }
+  if (path === "/clear" && (init.method ?? "GET").toUpperCase() === "GET") {
+    return requestNavigation(`${options.baseUrl}${path}`, { headers, signal: init.signal });
   }
   return fetch(`${options.baseUrl}${path}`, {
     ...init,

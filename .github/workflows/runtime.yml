@@ -44,18 +44,25 @@ jobs:
       - name: Build locked production images
         run: docker compose -f infra/docker/docker-compose.yml --env-file .env.production build
       - name: Initialize fresh database and start services
+        id: start
         run: |
           docker compose -f infra/docker/docker-compose.yml --env-file .env.production up -d --wait postgres redis
           docker compose -f infra/docker/docker-compose.yml --env-file .env.production run --rm backend node apps/backend/dist/database/migrate.js
           docker compose -f infra/docker/docker-compose.yml --env-file .env.production run --rm backend node apps/backend/dist/database/seed.js
           docker compose -f infra/docker/docker-compose.yml --env-file .env.production up -d --wait --wait-timeout 180
           pnpm verify:compose-runtime
-      - name: Verify participant, challenge isolation, admin, and one-time certificate flows
-        run: |
-          pnpm smoke:runtime --base-url http://localhost:8080
-          pnpm smoke:challenges --base-url http://localhost:8080
-          pnpm smoke:admin --base-url http://localhost:8080
-          pnpm smoke:clear --base-url http://localhost:8080
+      - name: Verify participant flow
+        if: ${{ !cancelled() && steps.start.outcome == 'success' }}
+        run: pnpm smoke:runtime --base-url http://localhost:8080
+      - name: Verify eight challenges and participant isolation
+        if: ${{ !cancelled() && steps.start.outcome == 'success' }}
+        run: pnpm smoke:challenges --base-url http://localhost:8080
+      - name: Verify administrator flow
+        if: ${{ !cancelled() && steps.start.outcome == 'success' }}
+        run: pnpm smoke:admin --base-url http://localhost:8080
+      - name: Verify one-time certificate flow
+        if: ${{ !cancelled() && steps.start.outcome == 'success' }}
+        run: pnpm smoke:clear --base-url http://localhost:8080
       - name: Show service diagnostics on failure
         if: failure()
         run: |
