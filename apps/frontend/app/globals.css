@@ -701,6 +701,10 @@ h1 {
   padding: clamp(24px, 5vw, 52px);
 }
 
+.welcomeHero h1 {
+  word-break: keep-all;
+}
+
 .welcomeHero .lede {
   max-width: 720px;
 }
@@ -1563,6 +1567,10 @@ code {
     align-items: center;
   }
 
+  .serviceCardFooter {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .difficultyGuideGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1647,14 +1655,50 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .participantGuide,
   .welcomeGuide {
     padding: 16px;
+  }
+
+  .portalHero {
+    margin-bottom: 16px;
+    padding: 0 0 12px;
+  }
+
+  .portalHero .lede {
+    margin-top: 10px;
+    font-size: 0.94rem;
+    line-height: 1.5;
   }
 
   .portalHero .headerActions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .portalNotice {
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    font-size: 0.9rem;
+  }
+
+  .participantGuide {
+    margin-bottom: 18px;
+    padding: 12px 14px;
+  }
+
+  .serviceDirectorySection {
+    gap: 12px;
+  }
+
+  .serviceDirectorySection > .sectionHeading {
+    gap: 8px;
+    margin-bottom: 0;
+  }
+
+  .serviceDirectorySection .eyebrow {
+    margin-bottom: 4px;
   }
 
   .difficultyFilters button {

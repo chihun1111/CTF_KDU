@@ -32,7 +32,10 @@ async function screenshot(page, name, masks = []) {
   await mkdir(outputDir, { recursive: true });
   // Stabilize sticky headers and mask coordinates for full-page captures after
   // focus or a button click has scrolled a long form.
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(async () => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
   await page.screenshot({
     path: `${outputDir}/${name}.png`, fullPage: true,
     timeout: 10_000,
