@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { UnauthorizedException } from "@nestjs/common";
 import { AuthLoginService, type LoginStore } from "./auth-login.service.js";
+import { DUMMY_PASSWORD_HASH } from "./password-hash.service.js";
 
 function createStore(events: string[], user: Awaited<ReturnType<LoginStore["findLoginUserByStudentIdHash"]>>): LoginStore {
   return {
@@ -41,6 +42,7 @@ test("AuthLoginService creates a new session and returns token only as cookie", 
 });
 
 test("AuthLoginService uses the same generic failure for unknown student id and bad password", async () => {
+  const comparisons: string[] = [];
   const missingUserService = new AuthLoginService(
     createStore([], null),
     {
@@ -48,7 +50,7 @@ test("AuthLoginService uses the same generic failure for unknown student id and 
       generateOpaqueToken: () => "unused-token",
       sessionHash: (token) => `hash:${token}`,
     },
-    { verifyPassword: async () => true },
+    { verifyPassword: async (_password, hash) => { comparisons.push(hash); return true; } },
     { buildSessionCookie: (token) => `ctf_session=${token}` },
   );
   const badPasswordEvents: string[] = [];
@@ -72,4 +74,5 @@ test("AuthLoginService uses the same generic failure for unknown student id and 
     message: "Login failed",
   });
   assert.deepEqual(badPasswordEvents, ["find:student-hash"]);
+  assert.deepEqual(comparisons, [DUMMY_PASSWORD_HASH]);
 });

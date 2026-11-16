@@ -1,3 +1,5 @@
+import { readTokenCookie } from "./read-token-cookie.js";
+
 export type AuthenticatedSession = {
   sessionId: string;
   userId: string;
@@ -20,7 +22,7 @@ export class SessionAuthService {
   ) {}
 
   async authenticateCookieHeader(cookieHeader: string | undefined): Promise<AuthenticatedSession | null> {
-    const sessionToken = this.extractCookie(cookieHeader, "ctf_session");
+    const sessionToken = readTokenCookie(cookieHeader, "ctf_session");
     if (!sessionToken) {
       return null;
     }
@@ -33,21 +35,5 @@ export class SessionAuthService {
 
     await this.store.touchSession(session.sessionId, now);
     return session;
-  }
-
-  private extractCookie(cookieHeader: string | undefined, name: string): string | null {
-    if (!cookieHeader) {
-      return null;
-    }
-
-    for (const part of cookieHeader.split(";")) {
-      const [rawName, ...rawValue] = part.trim().split("=");
-      if (rawName === name) {
-        const value = rawValue.join("=");
-        return value ? decodeURIComponent(value) : null;
-      }
-    }
-
-    return null;
   }
 }

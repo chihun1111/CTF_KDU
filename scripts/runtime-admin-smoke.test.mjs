@@ -1,13 +1,29 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import test from "node:test";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { hmacLookupHash } from "../packages/config/dist/index.js";
 import {
   assertNoSensitiveMaterial,
   buildAdminRoleUpdateQuery,
   buildUserIdQuery,
   parseArgs,
   readFirstPsqlValue,
+  runtimeStudentHash,
 } from "./runtime-admin-smoke.mjs";
+
+test("admin smoke looks up users with the same HMAC key derivation as the backend", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "ctf-admin-smoke-"));
+  try {
+    const pepper = "test-only-pepper-with-at-least-32-characters";
+    writeFileSync(path.join(directory, "student_id_hash_pepper"), `${pepper}\n`, { mode: 0o600 });
+    assert.equal(runtimeStudentHash({ runtimeSecretsDir: directory }, "9201234"), hmacLookupHash(pepper, "9201234"));
+  } finally {
+    rmSync(directory, { recursive: true });
+  }
+});
 
 test("runtime-admin-smoke accepts documented pnpm delimiter and admin options", () => {
   const options = parseArgs([

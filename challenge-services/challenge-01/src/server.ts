@@ -110,6 +110,8 @@ const SERVICE_PAGE_STYLE = `
       @media (max-width: 760px) { .festivalGrid { grid-template-columns: 1fr; } .boothGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .scheduleRow { grid-template-columns: 76px 1fr; } .scheduleRow > span { grid-column: 2; } .serviceShell, .serviceNavInner { width: min(100% - 32px, 1280px); } }
 `;
 
+class UpstreamUnavailableError extends Error {}
+
 type Env = Record<string, string | undefined>;
 type SecretFileReader = (path: string) => Promise<string | Buffer>;
 type FlagResponse = {
@@ -153,26 +155,33 @@ export function buildFlagBackendRequest(input: {
 }
 
 async function fetchCurrentUserFlag(cookieHeader: string | undefined): Promise<string | null> {
+  if (!cookieHeader || !/(?:^|;)\s*ctf_session=[^;\s]+/.test(cookieHeader)) return null;
   const serviceToken = await readInternalServiceToken();
-  if (!serviceToken) {
-    return null;
-  }
-
-  const backendRequest = buildFlagBackendRequest({
-    backendInternalUrl: process.env.BACKEND_INTERNAL_URL,
-    cookieHeader,
-    serviceToken,
-  });
+  if (!serviceToken) throw new UpstreamUnavailableError("Service authentication is unavailable");
 
   try {
-    const response = await fetch(backendRequest.url, { headers: backendRequest.headers });
+    const backendRequest = buildFlagBackendRequest({
+      backendInternalUrl: process.env.BACKEND_INTERNAL_URL,
+      cookieHeader,
+      serviceToken,
+    });
+    const response = await fetch(backendRequest.url, {
+      headers: backendRequest.headers,
+      signal: AbortSignal.timeout(5_000),
+      redirect: "error",
+    });
     if (!response.ok) {
-      return null;
+      await response.body?.cancel();
+      if (response.status === 401 || response.status === 403) return null;
+      throw new UpstreamUnavailableError("Flag service is unavailable");
     }
     const body = (await response.json()) as FlagResponse;
-    return body.flagId === "FLAG-01" && typeof body.flag === "string" ? body.flag : null;
+    if (body?.flagId !== "FLAG-01" || typeof body.flag !== "string") {
+      throw new UpstreamUnavailableError("Invalid flag service response");
+    }
+    return body.flag;
   } catch {
-    return null;
+    throw new UpstreamUnavailableError("Flag service is unavailable");
   }
 }
 
@@ -242,12 +251,40 @@ export function renderFestivalPage(flag: string): string {
 
 export function createChallengeServer() {
   return createServer((request, response) => {
-    void handleRequest(request, response);
+    void handleRequest(request, response).catch((error: unknown) => {
+      // Do not let a filesystem, upstream, or parsing failure terminate the service.
+      if (response.destroyed || response.writableEnded) return;
+      if (response.headersSent) {
+        response.destroy();
+        return;
+      }
+      response.writeHead(error instanceof UpstreamUnavailableError ? 503 : 500, {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      response.end("요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.\n");
+    });
   });
 }
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  const url = new URL(request.url ?? "/", "http://localhost");
+  let url: URL;
+  try {
+    url = new URL(request.url ?? "/", "http://localhost");
+  } catch {
+    response.writeHead(400, {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    response.end("잘못된 요청입니다.\n");
+    return;
+  }
+  const allowedMethod = "GET";
+  if (request.method !== allowedMethod) {
+    response.writeHead(405, { allow: allowedMethod, "cache-control": "no-store" });
+    response.end();
+    return;
+  }
 
   if (url.pathname === "/health") {
     response.writeHead(200, {

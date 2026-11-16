@@ -1,3 +1,5 @@
+import { registerHttpRuntimeTests } from "../../test-support/http-runtime.mjs";
+import { createChallengeServer } from "./server.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildFlagBackendRequest, readInternalServiceToken, renderFestivalPage } from "./server.js";
@@ -68,3 +70,5 @@ test("challenge-01 page keeps decoy comments that contain no flag material", () 
   assert(html.includes("초안 문구는 내부 검토 후 공개됩니다."));
   assert.equal(html.includes("FLAG-01"), false);
 });
+
+registerHttpRuntimeTests({ createServer: createChallengeServer, challengeId: "01" });

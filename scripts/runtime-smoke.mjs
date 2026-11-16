@@ -180,6 +180,7 @@ async function request(options, path, init = {}) {
   }
   return fetch(`${options.baseUrl}${path}`, {
     ...init,
+    signal: init.signal ?? AbortSignal.timeout(15_000),
     headers,
     redirect: init.redirect ?? "manual",
     body: init.json !== undefined ? JSON.stringify(init.json) : init.body,

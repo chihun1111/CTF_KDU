@@ -149,7 +149,7 @@ for (const filePath of [
   "packages/db/drizzle/0000_initial_schema.sql",
   "infra/docker/docker-compose.yml",
   "infra/nginx/nginx.conf",
-  "Docs/development/operations/04-secret-rotation.md",
+  "docs/operations.md",
   "scripts/verify-sensitive-artifacts.mjs",
   "scripts/verify-runtime-secrets.mjs",
   "scripts/generate-runtime-secrets.mjs",
@@ -213,7 +213,7 @@ for (const ignoredPath of [
   assertIncludes(dockerignore, ignoredPath, ".dockerignore");
 }
 
-const secretRotationDoc = readRequired("Docs/development/operations/04-secret-rotation.md");
+const secretRotationDoc = readRequired("docs/operations.md");
 for (const rotationTerm of [
   "SESSION_SECRET",
   "CLEAR_VIEW_TOKEN_SECRET",

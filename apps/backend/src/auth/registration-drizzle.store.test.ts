@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { ConflictException } from "@nestjs/common";
 import { RegistrationDrizzleStore } from "./registration-drizzle.store.js";
 
 function createInsert(tableName: string, events: string[]) {
@@ -98,4 +99,17 @@ test("RegistrationDrizzleStore runs registration operations inside a Drizzle tra
   assert(events.some((event) => event.startsWith("insert:sessions:")));
   assert.equal(events.at(0), "db-transaction:start");
   assert.equal(events.at(-1), "db-transaction:end");
+});
+
+test("concurrent duplicate registrations return a generic conflict instead of a database error", async () => {
+  for (const error of [
+    { code: "23505", constraint: "users_student_id_hash_key" },
+    { cause: { code: "23505", constraint: "users_student_id_hash_key" } },
+  ]) {
+    const store = new RegistrationDrizzleStore({ db: { transaction: async () => { throw error; } } });
+    await assert.rejects(() => store.transaction(async () => undefined), ConflictException);
+  }
+  const unexpected = new Error("database unavailable");
+  const store = new RegistrationDrizzleStore({ db: { transaction: async () => { throw unexpected; } } });
+  await assert.rejects(() => store.transaction(async () => undefined), (error) => error === unexpected);
 });

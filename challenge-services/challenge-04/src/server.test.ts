@@ -1,3 +1,5 @@
+import { registerHttpRuntimeTests } from "../../test-support/http-runtime.mjs";
+import { createChallengeServer } from "./server.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -77,3 +79,5 @@ test("challenge-04 script trusts client-side isAdmin storage and embeds the flag
   assert(script.includes(JSON.stringify(flag)));
   assert.equal(script.includes(otherFlag), false);
 });
+
+registerHttpRuntimeTests({ createServer: createChallengeServer, challengeId: "04" });

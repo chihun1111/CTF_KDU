@@ -19,6 +19,17 @@ x-backend-secrets: &backend-secrets
   - postgres_password
 
 x-challenge-service: &challenge-service
+  restart: unless-stopped
+  init: true
+  pids_limit: 128
+  mem_limit: 256m
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  # Root-owned services must still read owner-only bind-mounted secrets.
+  cap_add:
+    - DAC_OVERRIDE
   expose:
     - "8080"
   depends_on:
@@ -38,7 +49,8 @@ x-challenge-service: &challenge-service
 
 services:
   nginx:
-    image: nginx:1.27-alpine
+    restart: unless-stopped
+    image: nginx:1.30.6-alpine
     ports:
       - "${HTTP_PORT:-80}:80"
     volumes:
@@ -70,6 +82,12 @@ services:
       - ctf_challenges
 
   frontend:
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     build:
       context: ../..
       dockerfile: apps/frontend/Dockerfile
@@ -79,6 +97,7 @@ services:
       NODE_ENV: production
       NEXT_PUBLIC_BASE_PATH: /
       BACKEND_INTERNAL_URL: http://backend:8080
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost}
     depends_on:
       backend:
         condition: service_healthy
@@ -95,6 +114,14 @@ services:
       - ctf_app
 
   backend:
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
     build:
       context: ../..
       dockerfile: apps/backend/Dockerfile
@@ -147,6 +174,7 @@ services:
       - ctf_challenges
 
   postgres:
+    restart: unless-stopped
     image: postgres:17-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-campus_ctf}
@@ -167,6 +195,7 @@ services:
       - ctf_internal
 
   redis:
+    restart: unless-stopped
     image: redis:7.4-alpine
     command: ["redis-server", "--appendonly", "yes"]
     volumes:

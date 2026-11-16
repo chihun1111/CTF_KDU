@@ -1,3 +1,5 @@
+import { registerHttpRuntimeTests } from "../../test-support/http-runtime.mjs";
+import { createChallengeServer } from "./server.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -98,3 +100,5 @@ test("challenge-02 page and script expose no flag or debug route", () => {
 test("challenge-02 status page includes the global campus header above the local service header", () => {
   assertCampusGlobalHeader(renderStatusPage());
 });
+
+registerHttpRuntimeTests({ createServer: createChallengeServer, challengeId: "02", protectedPath: "/api/status" });

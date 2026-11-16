@@ -1,7 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module.js";
 import { AuditModule } from "../audit/audit.module.js";
-import { AuditService } from "../audit/audit.service.js";
 import { CryptoModule } from "../crypto/crypto.module.js";
 import { CryptoService } from "../crypto/crypto.service.js";
 import { DATABASE_CLIENT, DatabaseModule } from "../database/database.module.js";
@@ -33,9 +32,9 @@ export const CLEAR_CERTIFICATE_STORE = Symbol("CLEAR_CERTIFICATE_STORE");
     },
     {
       provide: FinalSubmitService,
-      inject: [FINAL_SUBMIT_STORE, CryptoService, ClearCookieService, AuditService],
-      useFactory: (store: FinalSubmitStore, crypto: CryptoService, clearCookie: ClearCookieService, auditService: AuditService) =>
-        new FinalSubmitService(store, crypto, clearCookie, auditService),
+      inject: [FINAL_SUBMIT_STORE, CryptoService, ClearCookieService],
+      useFactory: (store: FinalSubmitStore, crypto: CryptoService, clearCookie: ClearCookieService) =>
+        new FinalSubmitService(store, crypto, clearCookie),
     },
     {
       provide: ClearCertificateDrizzleStore,

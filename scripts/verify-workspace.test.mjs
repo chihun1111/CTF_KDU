@@ -62,7 +62,7 @@ function createBaseWorkspace() {
   writeFixtureFile(root, "scripts/runtime-smoke.mjs", "");
   writeFixtureFile(
     root,
-    "Docs/development/operations/04-secret-rotation.md",
+    "docs/operations.md",
     [
       "SESSION_SECRET",
       "CLEAR_VIEW_TOKEN_SECRET",

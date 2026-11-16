@@ -11,7 +11,7 @@ test("verify-docker-image-pulls prints the deployment image pull checklist", () 
   const output = execFileSync(process.execPath, [scriptPath, "--print-images"], { encoding: "utf8" });
   const images = JSON.parse(output);
 
-  assert.deepEqual(images, ["node:24-bookworm-slim", "nginx:1.27-alpine", "postgres:17-alpine", "redis:7.4-alpine"]);
+  assert.deepEqual(images, ["node:24-bookworm-slim", "nginx:1.30.6-alpine", "postgres:17-alpine", "redis:7.4-alpine"]);
 });
 
 test("verify-docker-image-pulls times out stalled pulls", () => {

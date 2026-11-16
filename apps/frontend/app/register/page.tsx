@@ -6,7 +6,7 @@ import { getCurrentSession } from "../lib/server-api";
 export default async function RegisterPage() {
   const session = await getCurrentSession();
   if (session.authenticated) {
-    redirect("/hub");
+    redirect(session.role === "admin" ? "/admin/operations" : "/hub");
   }
 
   return (

@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
     "dev:backend": "pnpm --filter backend dev",
     "dev:frontend": "pnpm --filter frontend dev",
     "preflight:deploy": "node scripts/deployment-preflight.mjs",
@@ -17,7 +18,7 @@
     "smoke:clear": "node scripts/runtime-clear-smoke.mjs",
     "smoke:runtime": "node scripts/runtime-smoke.mjs",
     "secrets:generate": "node scripts/generate-runtime-secrets.mjs",
-    "test": "pnpm verify:workspace && pnpm verify:docs && pnpm verify:ui && node --test scripts/*.test.mjs && pnpm --filter @campus-ctf/config build && pnpm --filter @campus-ctf/db build && pnpm --filter @campus-ctf/shared build && pnpm -r --if-present test",
+    "test": "pnpm verify:workspace && pnpm verify:docs && pnpm verify:ui && pnpm --filter @campus-ctf/config build && pnpm --filter @campus-ctf/db build && pnpm --filter @campus-ctf/shared build && node --test scripts/*.test.mjs && pnpm -r --if-present test",
     "verify:compose": "node scripts/verify-compose-static.mjs",
     "verify:docs": "node scripts/verify-doc-links.mjs",
     "verify:compose-runtime": "node scripts/verify-compose-runtime.mjs",
@@ -28,7 +29,7 @@
     "verify:workspace": "node scripts/verify-workspace.mjs"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "typescript": "^5.9.0"
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3"
   }
 }

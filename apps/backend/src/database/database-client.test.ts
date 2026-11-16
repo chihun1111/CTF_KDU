@@ -30,3 +30,15 @@ test("createDatabaseClient creates a pg pool from the database URL and passes it
   assert.deepEqual(poolOptions, [{ connectionString: "postgres://user:pass@postgres:5432/campus_ctf" }]);
   assert.deepEqual(drizzleCalls, [{ pool: pools[0], options: { casing: "snake_case" } }]);
 });
+
+test("database clients close their pool once during application shutdown", async () => {
+  const events: string[] = [];
+  class FakePool {
+    on(event: string) { events.push(`listen:${event}`); }
+    async end() { events.push("end"); }
+  }
+  const client = createDatabaseClient("postgres://example", { PoolCtor: FakePool, drizzleFactory: () => ({}) });
+  await client.onModuleDestroy();
+  await client.onModuleDestroy();
+  assert.deepEqual(events, ["listen:error", "end"]);
+});

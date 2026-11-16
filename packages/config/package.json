@@ -14,10 +14,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test dist/*.test.js || true"
+    "test": "node --test dist/*.test.js"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "typescript": "^5.9.0"
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3"
   }
 }

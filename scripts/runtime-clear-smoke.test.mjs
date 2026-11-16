@@ -1,22 +1,9 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createCipheriv, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
+import { encryptField } from "../packages/config/dist/index.js";
 import test from "node:test";
 import { buildFinalSubmitAuditQuery, buildFlagQuery, decryptField, parseArgs } from "./runtime-clear-smoke.mjs";
-
-function encryptFixture(plaintext, key, keyVersion = "flag-v1") {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  cipher.setAAD(Buffer.from(keyVersion, "utf8"));
-  const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  return {
-    alg: "AES-256-GCM",
-    keyVersion,
-    iv: iv.toString("base64url"),
-    ciphertext: ciphertext.toString("base64url"),
-    tag: cipher.getAuthTag().toString("base64url"),
-  };
-}
 
 test("runtime-clear-smoke accepts documented pnpm delimiter and clear options", () => {
   const options = parseArgs([
@@ -37,9 +24,9 @@ test("runtime-clear-smoke accepts documented pnpm delimiter and clear options", 
   assert.equal(options.runtimeSecretsDir, "/tmp/runtime-secrets");
 });
 
-test("runtime-clear-smoke decrypts AES-GCM flag bundles", () => {
-  const key = randomBytes(32);
-  const bundle = encryptFixture("KDUCTF{fixture_flag}", key);
+test("runtime-clear-smoke decrypts the exact AES-GCM bundles issued by the backend", () => {
+  const key = randomBytes(32).toString("base64");
+  const bundle = encryptField("KDUCTF{fixture_flag}", key, "flag-v1");
 
   assert.equal(decryptField(bundle, key), "KDUCTF{fixture_flag}");
 });

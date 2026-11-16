@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { loadDeploymentConfig } from "./deployment-config.mjs";
 
 const root = process.cwd();
 const failures = [];
@@ -12,7 +13,7 @@ function parseArgs(argv) {
     skipDocker: false,
     skipImagePulls: false,
     skipSecrets: false,
-    imageTimeoutMs: "8000",
+    imageTimeoutMs: "120000",
     backendLog: null,
     dbDump: null,
   };
@@ -66,6 +67,7 @@ function run(label, command, args, options = {}) {
     cwd: root,
     encoding: "utf8",
     stdio: "pipe",
+    timeout: 120_000,
   });
   if (result.stdout) {
     process.stdout.write(result.stdout);
@@ -94,11 +96,23 @@ if (!options.envFile) {
 if (!options.imageTimeoutMs) {
   failures.push("--image-timeout-ms requires a value");
 }
+if (failures.length > 0) {
+  console.error(failures.join("\n"));
+  process.exit(1);
+}
+
+let deployment;
+try {
+  deployment = loadDeploymentConfig({ root, composeFile: options.composeFile, envFile: options.envFile });
+} catch (error) {
+  console.error(`Deployment configuration invalid: ${error.code ?? error.message}`);
+  process.exit(1);
+}
 
 run("workspace structure", "pnpm", ["verify:workspace"]);
 
 if (!options.skipSecrets) {
-  run("runtime secrets", "pnpm", ["verify:secrets"]);
+  run("runtime secrets", "pnpm", ["verify:secrets", "--dir", deployment.runtimeSecretsDir]);
 }
 
 run("frontend and optional runtime sensitive scan", "pnpm", [

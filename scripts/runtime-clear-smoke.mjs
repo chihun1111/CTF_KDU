@@ -1,4 +1,5 @@
-import { createDecipheriv, createHmac } from "node:crypto";
+import { decryptField, hmacLookupHash } from "../packages/config/dist/index.js";
+export { decryptField } from "../packages/config/dist/index.js";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -69,21 +70,6 @@ function readSecret(dir, name) {
   return readFileSync(`${dir}/${name}`, "utf8").trim();
 }
 
-function hmacLookupHash(pepper, value) {
-  return createHmac("sha256", pepper).update(value, "utf8").digest("hex");
-}
-
-export function decryptField(bundle, key) {
-  assert(bundle?.alg === "AES-256-GCM", "Unsupported encrypted field bundle");
-  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(bundle.iv, "base64url"));
-  decipher.setAAD(Buffer.from(bundle.keyVersion, "utf8"));
-  decipher.setAuthTag(Buffer.from(bundle.tag, "base64url"));
-  return Buffer.concat([
-    decipher.update(Buffer.from(bundle.ciphertext, "base64url")),
-    decipher.final(),
-  ]).toString("utf8");
-}
-
 function getSetCookies(headers) {
   if (typeof headers.getSetCookie === "function") {
     return headers.getSetCookie();
@@ -113,7 +99,7 @@ async function readJson(response) {
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error(`Expected JSON from ${response.url}, received: ${text.slice(0, 120)}`);
+    throw new Error(`Expected JSON from ${new URL(response.url).pathname}`);
   }
 }
 
@@ -127,6 +113,7 @@ async function request(options, path, init = {}) {
   }
   return fetch(`${options.baseUrl}${path}`, {
     ...init,
+    signal: init.signal ?? AbortSignal.timeout(15_000),
     headers,
     redirect: init.redirect ?? "manual",
     body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
@@ -166,16 +153,13 @@ function runPostgresTextQuery(options, query) {
       "exec",
       "-T",
       "postgres",
-      "psql",
-      "-U",
-      "campus_ctf",
-      "-d",
-      "campus_ctf",
-      "-tA",
+      "sh",
       "-c",
+      'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -c "$1"',
+      "psql-query",
       query,
     ],
-    { encoding: "utf8", stdio: "pipe" },
+    { encoding: "utf8", stdio: "pipe", timeout: 30_000 },
   );
 
   if (result.status !== 0) {
@@ -190,8 +174,7 @@ function runPostgresTextQuery(options, query) {
 
 function readIssuedFlagsFromDb(options) {
   const studentPepper = readSecret(options.runtimeSecretsDir, "student_id_hash_pepper");
-  const flagKey = Buffer.from(readSecret(options.runtimeSecretsDir, "flag_encryption_key"), "base64");
-  assert(flagKey.byteLength === 32, "flag_encryption_key must decode to 32 bytes");
+  const flagKey = readSecret(options.runtimeSecretsDir, "flag_encryption_key");
 
   const encryptedByFlagId = JSON.parse(runPostgresTextQuery(options, buildFlagQuery(hmacLookupHash(studentPepper, options.studentId))) || "{}");
   assert(Object.keys(encryptedByFlagId).length === FINAL_FLAG_IDS.length, "runtime database did not return 8 issued flags");

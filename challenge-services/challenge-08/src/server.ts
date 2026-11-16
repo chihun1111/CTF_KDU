@@ -105,6 +105,8 @@ const SERVICE_PAGE_STYLE = `
       @media (max-width: 760px) { .serviceShell { width: min(100% - 32px, 1280px); } .vaultLayout { grid-template-columns: 1fr; } }
 `;
 
+class UpstreamUnavailableError extends Error {}
+
 type Env = Record<string, string | undefined>;
 type SecretFileReader = (path: string) => Promise<string | Buffer>;
 type FlagResponse = {
@@ -149,26 +151,33 @@ export function buildFlagBackendRequest(input: {
 }
 
 async function fetchCurrentUserFlag(cookieHeader: string | undefined): Promise<string | null> {
+  if (!cookieHeader || !/(?:^|;)\s*ctf_session=[^;\s]+/.test(cookieHeader)) return null;
   const serviceToken = await readInternalServiceToken();
-  if (!serviceToken) {
-    return null;
-  }
-
-  const backendRequest = buildFlagBackendRequest({
-    backendInternalUrl: process.env.BACKEND_INTERNAL_URL,
-    cookieHeader,
-    serviceToken,
-  });
+  if (!serviceToken) throw new UpstreamUnavailableError("Service authentication is unavailable");
 
   try {
-    const response = await fetch(backendRequest.url, { headers: backendRequest.headers });
+    const backendRequest = buildFlagBackendRequest({
+      backendInternalUrl: process.env.BACKEND_INTERNAL_URL,
+      cookieHeader,
+      serviceToken,
+    });
+    const response = await fetch(backendRequest.url, {
+      headers: backendRequest.headers,
+      signal: AbortSignal.timeout(5_000),
+      redirect: "error",
+    });
     if (!response.ok) {
-      return null;
+      await response.body?.cancel();
+      if (response.status === 401 || response.status === 403) return null;
+      throw new UpstreamUnavailableError("Flag service is unavailable");
     }
     const body = (await response.json()) as FlagResponse;
-    return body.flagId === "FLAG-08" && typeof body.flag === "string" ? body.flag : null;
+    if (body?.flagId !== "FLAG-08" || typeof body.flag !== "string") {
+      throw new UpstreamUnavailableError("Invalid flag service response");
+    }
+    return body.flag;
   } catch {
-    return null;
+    throw new UpstreamUnavailableError("Flag service is unavailable");
   }
 }
 
@@ -284,31 +293,53 @@ export type AccessGrantStore = {
   consume(token: string, sessionBinding: string): AccessGrant | undefined;
 };
 
-export function createGrantStore(now: () => number = Date.now): AccessGrantStore {
+export function createGrantStore(now: () => number = Date.now, maxEntries = 10_000): AccessGrantStore {
+  if (!Number.isInteger(maxEntries) || maxEntries < 1) {
+    throw new Error("Access grant capacity must be a positive integer");
+  }
   const grants = new Map<string, AccessGrant>();
+  const sessionTokens = new Map<string, string>();
+  const remove = (token: string, grant: AccessGrant) => {
+    grants.delete(token);
+    if (sessionTokens.get(grant.sessionBinding) === token) sessionTokens.delete(grant.sessionBinding);
+  };
+  const pruneExpired = () => {
+    const timestamp = now();
+    for (const [token, grant] of grants) {
+      if (grant.expiresAt <= timestamp) remove(token, grant);
+    }
+  };
   return {
     issue(sessionBinding: string): string {
+      pruneExpired();
+      // Rechecking the same ticket replaces the old grant instead of growing memory.
+      const previousToken = sessionTokens.get(sessionBinding);
+      if (previousToken) {
+        const previous = grants.get(previousToken);
+        if (previous) remove(previousToken, previous);
+      }
+      if (grants.size >= maxEntries) throw new Error("Access grant capacity exceeded");
       const token = randomBytes(24).toString("hex");
       grants.set(token, {
         expiresAt: now() + ACCESS_GRANT_TTL_MS,
         bonusCookieValue: randomBytes(32).toString("hex"),
         sessionBinding,
       });
+      sessionTokens.set(sessionBinding, token);
       return token;
     },
     peek(token: string): AccessGrant | undefined {
       const grant = grants.get(token);
-      if (!grant || grant.expiresAt <= now()) {
+      if (grant && grant.expiresAt <= now()) {
+        remove(token, grant);
         return undefined;
       }
       return grant;
     },
     consume(token: string, sessionBinding: string): AccessGrant | undefined {
       const grant = this.peek(token);
-      if (!grant || grant.sessionBinding !== sessionBinding) {
-        return undefined;
-      }
-      grants.delete(token);
+      if (!grant || grant.sessionBinding !== sessionBinding) return undefined;
+      remove(token, grant);
       return grant;
     },
   };
@@ -470,12 +501,40 @@ async function resolveVaultKeyAndSession(
 
 export function createChallengeServer(grants = grantStore) {
   return createServer((request, response) => {
-    void handleRequest(request, response, grants);
+    void handleRequest(request, response, grants).catch((error: unknown) => {
+      // Do not let a filesystem, upstream, or parsing failure terminate the service.
+      if (response.destroyed || response.writableEnded) return;
+      if (response.headersSent) {
+        response.destroy();
+        return;
+      }
+      response.writeHead(error instanceof UpstreamUnavailableError ? 503 : 500, {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      response.end("요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.\n");
+    });
   });
 }
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse, grants = grantStore): Promise<void> {
-  const url = new URL(request.url ?? "/", "http://localhost");
+  let url: URL;
+  try {
+    url = new URL(request.url ?? "/", "http://localhost");
+  } catch {
+    response.writeHead(400, {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    response.end("잘못된 요청입니다.\n");
+    return;
+  }
+  const allowedMethod = url.pathname === "/check" ? "POST" : "GET";
+  if (request.method !== allowedMethod) {
+    response.writeHead(405, { allow: allowedMethod, "cache-control": "no-store" });
+    response.end();
+    return;
+  }
 
   if (url.pathname === "/health") {
     response.writeHead(200, {
@@ -532,7 +591,13 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       return;
     }
 
-    const token = grants.issue(context.sessionBinding);
+    let token: string;
+    try {
+      token = grants.issue(context.sessionBinding);
+    } catch {
+      sendPage(response, 503, renderShell("잠시 후 다시 시도", "<div class=\"panel\"><p>요청이 많습니다. 잠시 후 다시 시도해 주세요.</p></div>"));
+      return;
+    }
     const grant = grants.peek(token);
     if (!grant) {
       sendPage(response, 500, renderDeniedPage(role));

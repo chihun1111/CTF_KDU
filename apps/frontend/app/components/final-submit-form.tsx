@@ -51,7 +51,6 @@ export function FinalSubmitForm({ initialResults, initialCorrectCount, requiredC
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
-    setResult(null);
     if (!validate() || pending) {
       return;
     }
@@ -98,28 +97,34 @@ export function FinalSubmitForm({ initialResults, initialCorrectCount, requiredC
   const correctCount = result?.correctCount ?? initialCorrectCount;
 
   return (
-    <form className="panel submitGrid" onSubmit={submit}>
+    <form className="panel submitGrid" onSubmit={submit} aria-busy={pending}>
       <div className="submitFields">
-        <div className="resultBanner">
+        <div className="resultBanner" aria-live="polite" aria-atomic="true">
           <strong>최근 제출 결과</strong>
           <span>
             {requiredCount}개 중 {correctCount}개 일치
           </span>
         </div>
 
-        {message ? <p className="formNotice">{message}</p> : null}
+        {message ? <p className="formNotice" role="status">{message}</p> : null}
 
         {FLAG_IDS.map((flagId) => (
           <label className="field flagField" key={flagId}>
             <span>플래그 입력 {Number(flagId.slice(-2))}</span>
             <input
               autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              disabled={pending}
+              maxLength={228}
+              aria-invalid={Boolean(fieldErrors[flagId])}
+              aria-describedby={fieldErrors[flagId] ? `${flagId}-error` : undefined}
               name={`flagsByFlagId.${flagId}`}
               placeholder={flagExample}
               value={values[flagId]}
               onChange={(event) => setValues((current) => ({ ...current, [flagId]: event.target.value }))}
             />
-            {fieldErrors[flagId] ? <small className="fieldError">{fieldErrors[flagId]}</small> : null}
+            {fieldErrors[flagId] ? <small className="fieldError" id={`${flagId}-error`} role="alert">{fieldErrors[flagId]}</small> : null}
             {displayResults[flagId] ? (
               <small className={displayResults[flagId]?.correct ? "resultGood" : "resultBad"}>
                 {displayResults[flagId]?.correct ? "일치" : "불일치"}

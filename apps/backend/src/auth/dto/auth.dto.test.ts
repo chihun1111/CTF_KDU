@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { plainToInstance } from "class-transformer";
 import { validate, type ValidationError } from "class-validator";
-import { LoginRequestDto, RegisterRequestDto } from "./auth.dto.js";
+import { LoginRequestDto, RegisterRequestDto, parseLoginRequest, parseRegisterRequest } from "./auth.dto.js";
+import { BadRequestException } from "@nestjs/common";
 
 function flattenErrorMessages(errors: ValidationError[]): string[] {
   return errors.flatMap((error) => [
@@ -62,4 +63,15 @@ test("LoginRequestDto uses the same public credential validation as register", a
   });
 
   assert.deepEqual(await validationErrors(dto), []);
+});
+
+test("registration requires a single consent object, including when called outside ValidationPipe", async () => {
+  for (const consent of [undefined, null, [], "yes", {}]) {
+    const input = { studentId: "2622022", password: "valid-password", consent };
+    assert((await validationErrors(plainToInstance(RegisterRequestDto, input))).length > 0);
+    assert.throws(() => parseRegisterRequest(input), BadRequestException);
+  }
+  for (const input of [null, undefined, [], "credentials", { studentId: 2622022, password: "valid-password" }]) {
+    assert.throws(() => parseLoginRequest(input), BadRequestException);
+  }
 });

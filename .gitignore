@@ -12,6 +12,9 @@ dist/
 .env.*
 !.env.example
 secrets/runtime-only/
+backups/
+artifacts/
+state/
 
 # Logs and local tooling
 *.log

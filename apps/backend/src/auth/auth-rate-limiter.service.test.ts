@@ -29,3 +29,26 @@ test("AuthRateLimiterService limits register by IP hash and login by IP plus stu
   await limiter.checkRegister("ip-hash", new Date("2026-05-10T00:01:01.000Z"));
   await limiter.checkLogin("ip-hash", "student-hash", new Date("2026-05-10T00:01:01.000Z"));
 });
+
+test("login limits cover password spraying and distributed attempts against one account", async () => {
+  const limiter = new AuthRateLimiterService({ loginIpMaxAttempts: 2, loginAccountMaxAttempts: 2 });
+  const now = new Date("2026-05-10T00:00:00Z");
+  await limiter.checkLogin("shared-ip", "one", now);
+  await limiter.checkLogin("shared-ip", "two", now);
+  await assertRateLimited(() => limiter.checkLogin("shared-ip", "three", now));
+
+  await limiter.checkLogin("ip-a", "target", now);
+  await limiter.checkLogin("ip-b", "target", now);
+  await assertRateLimited(() => limiter.checkLogin("ip-c", "target", now));
+});
+
+test("expired counters are reclaimed and active counters cannot be evicted to bypass limits", async () => {
+  const limiter = new AuthRateLimiterService({ maxEntries: 2, registerMaxAttempts: 1, windowMs: 1_000 });
+  const now = new Date("2026-05-10T00:00:00Z");
+  await limiter.checkRegister("one", now);
+  await limiter.checkRegister("two", now);
+  await assertRateLimited(() => limiter.checkRegister("three", now));
+  await assertRateLimited(() => limiter.checkRegister("one", now));
+  await limiter.checkRegister("three", new Date(now.getTime() + 1_001));
+  await limiter.checkRegister("four", new Date(now.getTime() + 1_001));
+});

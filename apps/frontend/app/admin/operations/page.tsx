@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AdminOperationsAutoRefresh } from "../../components/admin-operations-auto-refresh";
+import { AdminPagination } from "../../components/admin-pagination";
 import { LogoutButton } from "../../components/logout-button";
+import { parseAdminPages } from "../../lib/admin-pagination";
 import {
   getAdminClears,
   getAdminAuditLogs,
@@ -27,7 +29,11 @@ import {
   type AdminSystemHealth,
 } from "../../lib/types";
 
-export default async function AdminOperationsPage() {
+export default async function AdminOperationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await getCurrentSession();
   if (!session.authenticated) {
     redirect("/login");
@@ -35,6 +41,8 @@ export default async function AdminOperationsPage() {
   if (session.role !== "admin") {
     redirect("/hub");
   }
+
+  const pages = parseAdminPages(await searchParams);
 
   const [
     summaryResult,
@@ -49,14 +57,22 @@ export default async function AdminOperationsPage() {
   ] = await Promise.all([
     getAdminOperationsSummary(),
     getOnlineSessionCount(),
-    getAdminParticipants(),
-    getAdminSubmissions(),
-    getAdminClears(),
+    getAdminParticipants(pages.participantsPage),
+    getAdminSubmissions(pages.submissionsPage),
+    getAdminClears(pages.clearsPage),
     getAdminChallengeStatus(),
     getAdminSystemHealth(),
-    getAdminAuditLogs(),
+    getAdminAuditLogs(pages.auditPage),
     getAdminHints(),
   ]);
+  const responses = [summaryResult, onlineResult, participantsResult, submissionsResult, clearsResult,
+    challengeStatusResult, systemHealthResult, auditLogsResult, adminHintsResult];
+  if (responses.some((result) => !result.ok && result.status === 401)) {
+    redirect("/login");
+  }
+  if (responses.some((result) => !result.ok && result.status === 403)) {
+    redirect("/hub");
+  }
   if (
     !summaryResult.ok ||
     !onlineResult.ok ||
@@ -153,12 +169,20 @@ export default async function AdminOperationsPage() {
       </section>
 
       <section className="adminSectionGrid" aria-label="운영 상세 섹션">
-        <ParticipantTable items={participants} />
-        <SubmissionTable items={submissions} />
-        <ClearTable items={clears} />
+        <ParticipantTable items={participants} pagination={
+          <AdminPagination list={participantsResult.data} pages={pages} pageKey="participantsPage" section="participants" label="참가 현황" />
+        } />
+        <SubmissionTable items={submissions} pagination={
+          <AdminPagination list={submissionsResult.data} pages={pages} pageKey="submissionsPage" section="submissions" label="제출 현황" />
+        } />
+        <ClearTable items={clears} pagination={
+          <AdminPagination list={clearsResult.data} pages={pages} pageKey="clearsPage" section="clears" label="클리어 현황" />
+        } />
         <ChallengeStatusTable items={challengeStatus} />
         <SystemHealthPanel health={systemHealth} />
-        <AuditLogTable items={auditLogs} />
+        <AuditLogTable items={auditLogs} pagination={
+          <AdminPagination list={auditLogsResult.data} pages={pages} pageKey="auditPage" section="audit-logs-modal" label="감사 로그" />
+        } />
       </section>
 
       <AdminHintsPanel challenges={adminHints.challenges} releasedCount={adminHints.releasedStageCount} totalCount={adminHints.totalStageCount} />
@@ -254,7 +278,7 @@ function statusLabel(status: "ok" | "degraded" | "down"): string {
   return "중단";
 }
 
-function ParticipantTable({ items }: { items: AdminParticipantListItem[] }) {
+function ParticipantTable({ items, pagination }: { items: AdminParticipantListItem[]; pagination: React.ReactNode }) {
   return (
     <article className="panel adminTablePanel" id="participants">
       <h2>참가 현황</h2>
@@ -282,11 +306,12 @@ function ParticipantTable({ items }: { items: AdminParticipantListItem[] }) {
         </tbody>
       </table>
       {items.length === 0 ? <p className="mutedText">표시할 참가자가 없습니다.</p> : null}
+      {pagination}
     </article>
   );
 }
 
-function SubmissionTable({ items }: { items: AdminSubmissionListItem[] }) {
+function SubmissionTable({ items, pagination }: { items: AdminSubmissionListItem[]; pagination: React.ReactNode }) {
   return (
     <article className="panel adminTablePanel" id="submissions">
       <h2>제출 현황</h2>
@@ -321,11 +346,12 @@ function SubmissionTable({ items }: { items: AdminSubmissionListItem[] }) {
         </tbody>
       </table>
       {items.length === 0 ? <p className="mutedText">표시할 제출 이력이 없습니다.</p> : null}
+      {pagination}
     </article>
   );
 }
 
-function ClearTable({ items }: { items: AdminClearListItem[] }) {
+function ClearTable({ items, pagination }: { items: AdminClearListItem[]; pagination: React.ReactNode }) {
   return (
     <article className="panel adminTablePanel" id="clears">
       <h2>클리어 현황</h2>
@@ -346,6 +372,7 @@ function ClearTable({ items }: { items: AdminClearListItem[] }) {
         </tbody>
       </table>
       {items.length === 0 ? <p className="mutedText">표시할 클리어 기록이 없습니다.</p> : null}
+      {pagination}
     </article>
   );
 }
@@ -410,7 +437,7 @@ function SystemHealthPanel({ health }: { health: AdminSystemHealth }) {
   );
 }
 
-function AuditLogTable({ items }: { items: AdminAuditLogItem[] }) {
+function AuditLogTable({ items, pagination }: { items: AdminAuditLogItem[]; pagination: React.ReactNode }) {
   return (
     <article className="panel auditLaunchPanel" id="audit-logs">
       <div>
@@ -435,6 +462,7 @@ function AuditLogTable({ items }: { items: AdminAuditLogItem[] }) {
           </div>
           <div className="adminTablePanel auditModalTable">
             <AuditLogRows items={items} />
+            {pagination}
           </div>
         </div>
       </section>

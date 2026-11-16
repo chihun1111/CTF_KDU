@@ -7,6 +7,7 @@ import { logoutParticipant } from "../lib/client-api";
 export function LogoutButton() {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   async function logout() {
     if (pending) {
@@ -14,17 +15,24 @@ export function LogoutButton() {
     }
 
     setPending(true);
+    setMessage(null);
     try {
       await logoutParticipant();
-    } finally {
       router.replace("/login");
       router.refresh();
+    } catch {
+      setMessage("로그아웃하지 못했습니다. 다시 시도해주세요.");
+    } finally {
+      setPending(false);
     }
   }
 
   return (
-    <button className="ghostButton" disabled={pending} type="button" onClick={logout}>
-      {pending ? "로그아웃 중" : "로그아웃"}
-    </button>
+    <span className="logoutControl">
+      <button className="ghostButton" disabled={pending} type="button" onClick={logout}>
+        {pending ? "로그아웃 중" : "로그아웃"}
+      </button>
+      {message ? <span className="formError" role="alert">{message}</span> : null}
+    </span>
   );
 }

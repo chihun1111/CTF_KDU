@@ -1,3 +1,5 @@
+import { registerHttpRuntimeTests } from "../../test-support/http-runtime.mjs";
+import { createChallengeServer } from "./server.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -72,6 +74,9 @@ test("challenge-06 source map hides the current session flag in sourcesContent",
   assert.equal(map.version, 3);
   assert.equal(map.file, "main.js");
   assert.deepEqual(map.sources, ["../../src/config/archive.js"]);
+  assert(map.sourcesContent[0]);
   assert(map.sourcesContent[0].includes(`const ARCHIVE_ENTRY = ${JSON.stringify(flag)}`));
   assert.equal(renderSourceMap(otherFlag).includes(flag), false);
 });
+
+registerHttpRuntimeTests({ createServer: createChallengeServer, challengeId: "06" });

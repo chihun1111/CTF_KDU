@@ -103,34 +103,40 @@ export function AuthForm({ mode }: AuthFormProps) {
   }
 
   return (
-    <form className="panel formStack" onSubmit={submit}>
+    <form className="panel formStack" onSubmit={submit} aria-busy={pending}>
       <label className="field">
         <span>학번</span>
         <input
           autoComplete="username"
+          aria-describedby="student-id-help"
+          disabled={pending}
           inputMode="numeric"
           maxLength={7}
           name="studentId"
           pattern="\d{7}"
           placeholder="7자리 학번"
+          required
           value={studentId}
           onChange={(event) => setStudentId(event.target.value.replace(/\D/g, "").slice(0, 7))}
         />
-        <small>7자리 숫자 문자열로 입력합니다.</small>
+        <small id="student-id-help">7자리 숫자 문자열로 입력합니다.</small>
       </label>
 
       <label className="field">
         <span>비밀번호</span>
         <input
           autoComplete={isRegister ? "new-password" : "current-password"}
+          aria-describedby="password-help"
+          disabled={pending}
           maxLength={128}
           minLength={8}
           name="password"
           type="password"
+          required
           value={password}
           onChange={(event) => setPassword(event.target.value)}
         />
-        <small>8자 이상 128자 이하로 입력합니다.</small>
+        <small id="password-help">8자 이상 128자 이하로 입력합니다.</small>
       </label>
 
       {isRegister ? (
@@ -147,10 +153,12 @@ export function AuthForm({ mode }: AuthFormProps) {
           <label className="checkRow">
             <input
               checked={requiredLoggingAccepted}
+              disabled={pending}
+              required
               type="checkbox"
               onChange={(event) => setRequiredLoggingAccepted(event.target.checked)}
             />
-            <span>서비스 이용과 보안 운영 로그 수집에 동의합니다.</span>
+            <span>[필수] 서비스 이용과 보안 운영 로그 수집에 동의합니다.</span>
           </label>
           <p>
             로그인, 제출, 클리어 처리와 장애 대응에 필요한 최소 운영 로그만 사용하며 비밀번호, 제출 원문, 플래그 원문은
@@ -160,20 +168,21 @@ export function AuthForm({ mode }: AuthFormProps) {
           <label className="checkRow">
             <input
               checked={analyticsLoggingAccepted}
+              disabled={pending}
               type="checkbox"
               onChange={(event) => setAnalyticsLoggingAccepted(event.target.checked)}
             />
-            <span>CTF 진행 분석 로그 수집에 동의합니다.</span>
+            <span>[선택] CTF 진행 분석 로그 수집에 동의합니다.</span>
           </label>
 
           <label className="checkRow">
-            <input checked={cookieAccepted} type="checkbox" onChange={(event) => setCookieAccepted(event.target.checked)} />
-            <span>로그인 유지에 필요한 HttpOnly cookie 사용에 동의합니다.</span>
+            <input checked={cookieAccepted} disabled={pending} required type="checkbox" onChange={(event) => setCookieAccepted(event.target.checked)} />
+            <span>[필수] 로그인 유지에 필요한 쿠키 사용에 동의합니다.</span>
           </label>
         </div>
       ) : null}
 
-      {message ? <p className="formError">{message}</p> : null}
+      {message ? <p className="formError" role="alert">{message}</p> : null}
 
       <button className="primaryButton" disabled={!isValid || pending} type="submit">
         {pending ? "처리 중" : isRegister ? "회원가입" : "로그인"}

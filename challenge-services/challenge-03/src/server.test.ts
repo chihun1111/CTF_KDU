@@ -1,3 +1,5 @@
+import { registerHttpRuntimeTests } from "../../test-support/http-runtime.mjs";
+import { createChallengeServer } from "./server.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -69,6 +71,8 @@ test("challenge-03 list shows only the demo user's submissions", () => {
 test("challenge-03 detail intentionally renders any submission id without ownership check", () => {
   const flag = "KDUCTF" + "{current_user_flag_03}";
   const rows = buildAssignmentRows(flag);
+  assert(rows[3]);
+  assert(rows[2]);
 
   const privateRow = renderAssignmentDetail(rows[3]);
   assert(privateRow.includes("비공개 과제 검토"));
@@ -83,7 +87,9 @@ test("challenge-03 detail intentionally renders any submission id without owners
 test("challenge-03 flag material never leaks into another user's rows", () => {
   const currentFlag = "KDUCTF" + "{current_user_flag_03}";
   const otherFlag = "KDUCTF" + "{other_user_flag_03}";
-  const html = renderAssignmentDetail(buildAssignmentRows(currentFlag)[3]);
+  const row = buildAssignmentRows(currentFlag)[3];
+  assert(row);
+  const html = renderAssignmentDetail(row);
 
   assert(html.includes(currentFlag));
   assert.equal(html.includes(otherFlag), false);
@@ -94,3 +100,5 @@ test("challenge-03 list, detail, and error pages include the global campus heade
   assertCampusGlobalHeader(renderAssignmentDetail({ id: 1, title: "과제", owner: "student01", status: "제출 완료" }));
   assertCampusGlobalHeader(renderErrorPage("요청을 처리하지 못했습니다."), "");
 });
+
+registerHttpRuntimeTests({ createServer: createChallengeServer, challengeId: "03" });

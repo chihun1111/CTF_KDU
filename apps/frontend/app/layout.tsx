@@ -4,6 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "KDU 교내 서비스 | 2026 교내 CTF",
   description: "2026 교내 CTF 참가자를 위한 KDU 교내 서비스 포털입니다.",
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({

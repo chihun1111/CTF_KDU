@@ -1,3 +1,5 @@
+import { registerHttpRuntimeTests } from "../../test-support/http-runtime.mjs";
+import { createChallengeServer } from "./server.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -70,3 +72,5 @@ test("challenge-05 bundle keeps the deploy memo and points at the build archive 
   assert(script.trimEnd().endsWith("//# sourceMappingURL=/clubs/build-archive/assets/main.js.map"));
   assert.equal(script.includes(otherFlag), false);
 });
+
+registerHttpRuntimeTests({ createServer: createChallengeServer, challengeId: "05" });

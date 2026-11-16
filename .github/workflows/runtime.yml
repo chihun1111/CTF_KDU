@@ -1,0 +1,66 @@
+name: Runtime integration
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      COMPOSE_PROJECT_NAME: ctf-ci-${{ github.run_id }}
+      COMPOSE_PARALLEL_LIMIT: "2"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # verified v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # verified v4
+        with:
+          node-version: "24"
+      - name: Prepare tools and isolated test secrets
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.1 --activate
+          pnpm install --frozen-lockfile
+          pnpm --filter @campus-ctf/config build
+          cp .env.example .env.production
+          pnpm secrets:generate
+          pnpm verify:secrets
+          # Local Compose file secrets retain host UID. Only challenge 07 runs as UID 1000.
+          sudo chown 1000:1000 secrets/runtime-only/internal_service_token_07
+          pnpm verify:compose
+      - name: Build locked production images
+        run: docker compose -f infra/docker/docker-compose.yml --env-file .env.production build
+      - name: Initialize fresh database and start services
+        run: |
+          docker compose -f infra/docker/docker-compose.yml --env-file .env.production up -d --wait postgres redis
+          docker compose -f infra/docker/docker-compose.yml --env-file .env.production run --rm backend node apps/backend/dist/database/migrate.js
+          docker compose -f infra/docker/docker-compose.yml --env-file .env.production run --rm backend node apps/backend/dist/database/seed.js
+          docker compose -f infra/docker/docker-compose.yml --env-file .env.production up -d --wait --wait-timeout 180
+          pnpm verify:compose-runtime
+      - name: Verify participant, challenge isolation, admin, and one-time certificate flows
+        run: |
+          pnpm smoke:runtime --base-url http://localhost:8080
+          pnpm smoke:challenges --base-url http://localhost:8080
+          pnpm smoke:admin --base-url http://localhost:8080
+          pnpm smoke:clear --base-url http://localhost:8080
+      - name: Show service diagnostics on failure
+        if: failure()
+        run: |
+          docker compose -f infra/docker/docker-compose.yml --env-file .env.production ps --all
+          docker compose -f infra/docker/docker-compose.yml --env-file .env.production logs --no-color --tail=80 backend frontend challenge-07 nginx
+      - name: Remove only this disposable CI stack
+        if: always()
+        run: docker compose -f infra/docker/docker-compose.yml --env-file .env.production down --volumes --remove-orphans

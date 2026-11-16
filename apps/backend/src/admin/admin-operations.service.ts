@@ -219,6 +219,7 @@ function participantRefForUserId(userId: string): string {
 }
 
 export class AdminOperationsService {
+  private challengeHealthSnapshot?: { expiresAt: number; result: Promise<ChallengeHealthProbeResult[]> };
   constructor(
     private readonly store: AdminOperationsStore,
     private readonly onlineCountReader: OnlineCountReader,
@@ -226,9 +227,10 @@ export class AdminOperationsService {
   ) {}
 
   async getSummary(now = new Date()): Promise<AdminOperationsSummary> {
-    const [counts, onlineCount] = await Promise.all([
+    const [counts, onlineCount, challengeHealth] = await Promise.all([
       this.store.getSummaryCounts(),
       this.onlineCountReader.getOnlineCount(),
+      this.checkChallengeHealth(),
     ]);
 
     return {
@@ -239,9 +241,9 @@ export class AdminOperationsService {
         postgres: "ok",
         redis: onlineCount.source === "redis_presence" ? "ok" : "degraded",
         challengeServices: {
-          ok: 8,
-          degraded: 0,
-          down: 0,
+          ok: challengeHealth.filter((service) => service.status === "ok").length,
+          degraded: challengeHealth.filter((service) => service.status === "degraded").length,
+          down: challengeHealth.filter((service) => service.status === "down").length,
         },
       },
       generatedAt: now.toISOString(),
@@ -280,16 +282,28 @@ export class AdminOperationsService {
     }));
   }
 
-  listChallengeStatus(now = new Date()): Promise<AdminChallengeStatusItem[]> {
-    return this.store.listChallengeStatus(now);
+  async listChallengeStatus(now = new Date()): Promise<AdminChallengeStatusItem[]> {
+    const [rows, health] = await Promise.all([this.store.listChallengeStatus(now), this.checkChallengeHealth()]);
+    const byChallengeId = new Map(health.map((result) => [result.challengeId, result.status]));
+    return rows.map((row) => ({
+      ...row,
+      health: byChallengeId.get(row.challengeId) ?? "down",
+      lastHealthcheckAt: now.toISOString(),
+    }));
   }
 
   async getSystemHealth(now = new Date()): Promise<AdminSystemHealth> {
     const redisStart = Date.now();
+    let redisLatencyMs = 0;
+    const onlineCountPromise = this.onlineCountReader.getOnlineCount().finally(() => {
+      // Stop this timer when the presence lookup settles, independently of the
+      // database and challenge probes that may still be running.
+      redisLatencyMs = elapsedMs(redisStart);
+    });
     const [snapshotResult, onlineCountResult, challengeServices] = await Promise.allSettled([
       this.store.getSystemHealthSnapshot(),
-      this.onlineCountReader.getOnlineCount(),
-      Promise.all(CHALLENGE_HEALTH_ENDPOINTS.map((endpoint) => this.challengeHealthChecker.check(endpoint))),
+      onlineCountPromise,
+      this.checkChallengeHealth(),
     ]);
     const snapshot = snapshotResult.status === "fulfilled" ? snapshotResult.value : null;
     const onlineCount = onlineCountResult.status === "fulfilled" ? onlineCountResult.value : null;
@@ -302,7 +316,7 @@ export class AdminOperationsService {
       },
       redis: {
         status: onlineCount ? (onlineCount.source === "redis_presence" ? "ok" : "degraded") : "down",
-        latencyMs: elapsedMs(redisStart),
+        latencyMs: redisLatencyMs,
       },
       challengeServices:
         challengeServices.status === "fulfilled"
@@ -313,6 +327,23 @@ export class AdminOperationsService {
               latencyMs: 0,
             })),
     };
+  }
+
+  private checkChallengeHealth(): Promise<ChallengeHealthProbeResult[]> {
+    const now = Date.now();
+    if (!this.challengeHealthSnapshot || this.challengeHealthSnapshot.expiresAt <= now) {
+      const result = Promise.all(CHALLENGE_HEALTH_ENDPOINTS.map(async (endpoint) => {
+        try {
+          return await this.challengeHealthChecker.check(endpoint);
+        } catch {
+          return { challengeId: endpoint.challengeId, status: "down" as const, latencyMs: 0 };
+        }
+      }));
+      // A dashboard render requests several endpoints concurrently. Share their
+      // bounded probes without retaining a stale healthy status across refreshes.
+      this.challengeHealthSnapshot = { expiresAt: now + 2_000, result };
+    }
+    return this.challengeHealthSnapshot.result;
   }
 
   listAuditLogs(page = 1, pageSize = 50): Promise<AdminListResponse<AdminAuditLogItem>> {

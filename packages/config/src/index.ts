@@ -55,7 +55,7 @@ export function loadRuntimeSecrets(env: EnvLike = process.env): RuntimeSecrets {
     ]),
   ) as Record<InternalChallengeId, string>;
 
-  return {
+  const secrets: RuntimeSecrets = {
     SESSION_SECRET: readSecretValue(env, "SESSION_SECRET"),
     FLAG_ENCRYPTION_KEY: readSecretValue(env, "FLAG_ENCRYPTION_KEY"),
     FLAG_HASH_PEPPER: readSecretValue(env, "FLAG_HASH_PEPPER"),
@@ -65,6 +65,27 @@ export function loadRuntimeSecrets(env: EnvLike = process.env): RuntimeSecrets {
     CLAIM_TOKEN_SECRET: readSecretValue(env, "CLAIM_TOKEN_SECRET"),
     INTERNAL_SERVICE_TOKENS: internalServiceTokens,
   };
+  if (env.NODE_ENV === "production") {
+    const entries = [
+      ...Object.entries(secrets).filter(([name]) => name !== "INTERNAL_SERVICE_TOKENS"),
+      ...Object.entries(internalServiceTokens).map(([id, value]) => [`INTERNAL_SERVICE_TOKEN_${id}`, value]),
+    ] as [string, string][];
+    const used = new Set<string>();
+    for (const [name, value] of entries) {
+      if (value.length < 32) {
+        throw new Error(`Runtime secret ${name} must contain at least 32 characters`);
+      }
+      if (used.has(value)) {
+        throw new Error(`Runtime secret ${name} must be unique`);
+      }
+      used.add(value);
+      if (name.endsWith("ENCRYPTION_KEY") &&
+          (Buffer.from(value, "base64").byteLength !== 32 || Buffer.from(value, "base64").toString("base64") !== value)) {
+        throw new Error(`Runtime secret ${name} must be a base64-encoded 32-byte key`);
+      }
+    }
+  }
+  return secrets;
 }
 
 function encryptionKeyBytes(secret: string): Buffer {
@@ -106,6 +127,11 @@ export function hmacLookupHash(secret: string, value: string): string {
 }
 
 export function timingSafeHashEqual(left: string, right: string): boolean {
+  // Buffer.from(..., "hex") silently truncates malformed input. Reject it before
+  // comparing so empty or partially decoded values can never authenticate.
+  if (!/^[a-f0-9]{64}$/i.test(left) || !/^[a-f0-9]{64}$/i.test(right)) {
+    return false;
+  }
   const leftBytes = Buffer.from(left, "hex");
   const rightBytes = Buffer.from(right, "hex");
   if (leftBytes.length !== rightBytes.length) {

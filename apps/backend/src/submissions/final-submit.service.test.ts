@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BadRequestException } from "@nestjs/common";
-import { FinalSubmitService, type FinalSubmitStore } from "./final-submit.service.js";
+import { FinalSubmitService, type FinalSubmitInput, type FinalSubmitStore } from "./final-submit.service.js";
 
 const flagIds = ["FLAG-01", "FLAG-02", "FLAG-03", "FLAG-04", "FLAG-05", "FLAG-06", "FLAG-07", "FLAG-08"] as const;
 
@@ -11,7 +11,7 @@ function validInput(valueByFlagId: Record<string, string>) {
   };
 }
 
-function createStore(events: string[] = []): FinalSubmitStore {
+function createStore(events: string[] = [], auditEvents: unknown[] = []): FinalSubmitStore {
   return {
     async transaction(callback) {
       return callback({
@@ -35,6 +35,9 @@ function createStore(events: string[] = []): FinalSubmitStore {
         },
         async createClearViewToken(input) {
           events.push(`clear-token:${JSON.stringify(input)}`);
+        },
+        async recordFinalSubmitAudit(input) {
+          auditEvents.push(input);
         },
       });
     },
@@ -149,7 +152,7 @@ test("FinalSubmitService clears when all issued flags are submitted in different
 test("FinalSubmitService records final submit audit metadata per participant", async () => {
   const auditEvents: unknown[] = [];
   const service = new FinalSubmitService(
-    createStore(),
+    createStore([], auditEvents),
     {
       flagHash: (value) => (value.includes("right-01") ? "FLAG-01-hash" : `hash:${value}`),
       timingSafeHashEqual: (left, right) => left === right,
@@ -158,11 +161,6 @@ test("FinalSubmitService records final submit audit metadata per participant", a
     },
     {
       buildClearCookie: () => "ctf_clear_once=clear-token",
-    },
-    {
-      async recordFinalSubmit(input) {
-        auditEvents.push(input);
-      },
     },
   );
 
@@ -209,6 +207,25 @@ test("FinalSubmitService issues a clear cookie only when all 8 flags are correct
   assert(events.some((event) => event.startsWith("clear-token:")));
 });
 
+test("audit failure aborts the final-submit transaction before issuing a clear cookie", async () => {
+  const events: string[] = [];
+  const baseStore = createStore(events);
+  const service = new FinalSubmitService({
+    transaction: (callback) => baseStore.transaction((tx) => callback({
+      ...tx,
+      async recordFinalSubmitAudit() { throw new Error("audit unavailable"); },
+    })),
+  }, {
+    flagHash: (value) => `${value.match(/FLAG-0[1-8]/)?.[0] ?? "missing"}-hash`,
+    timingSafeHashEqual: (left, right) => left === right,
+    generateOpaqueToken: () => "clear-token",
+    clearViewTokenHash: () => "hash",
+  }, { buildClearCookie: () => { throw new Error("must not emit cookie"); } });
+  await assert.rejects(() => service.submit("user-1", validInput(Object.fromEntries(flagIds.map((id) => [id, "KDUCTF" + `{${id}}`])))), /audit unavailable/);
+  assert.equal(events.some((event) => event.startsWith("clear:")), false);
+  assert.equal(events.some((event) => event.startsWith("clear-token:")), false);
+});
+
 test("FinalSubmitService rejects empty submissions and malformed submitted flag values", async () => {
   const service = new FinalSubmitService(createStore(), {
     flagHash: () => "hash",
@@ -222,4 +239,7 @@ test("FinalSubmitService rejects empty submissions and malformed submitted flag 
   await assert.rejects(() => service.submit("user-1", { flagsByFlagId: {} }), BadRequestException);
   await assert.rejects(() => service.submit("user-1", { flagsByFlagId: { "FLAG-01": "" } }), BadRequestException);
   await assert.rejects(() => service.submit("user-1", validInput({ "FLAG-01": "not-a-flag" })), BadRequestException);
+  for (const malformed of [null, undefined, [], "text", { flagsByFlagId: [] }]) {
+    await assert.rejects(() => service.submit("user-1", malformed as FinalSubmitInput), BadRequestException);
+  }
 });

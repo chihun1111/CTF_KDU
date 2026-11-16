@@ -40,8 +40,8 @@ function runVerifier(args = []) {
 
 function createSecretDir() {
   const dir = mkdtempSync(path.join(tmpdir(), "campus-ctf-secrets-"));
-  const aes = Buffer.alloc(32, 7).toString("base64");
-  for (const file of secretFiles) {
+  for (const [index, file] of secretFiles.entries()) {
+    const aes = Buffer.alloc(32, index + 1).toString("base64");
     const body = file.endsWith("encryption_key") ? aes : `${file}-value-with-at-least-32-bytes`;
     const filePath = path.join(dir, file);
     writeFileSync(filePath, `${body}\n`);
@@ -70,4 +70,16 @@ test("verify-runtime-secrets rejects missing, weak, and over-readable secret fil
   assert.match(result.output, /base64-encoded 32-byte AES key/);
   assert.match(result.output, /group\/world-readable/);
   assert.match(result.output, /Missing runtime secret file: session_secret/);
+});
+
+test("verify-runtime-secrets rejects reused service tokens without printing their value", () => {
+  const dir = createSecretDir();
+  const token = "duplicate-service-token-with-at-least-32-characters";
+  for (const name of ["internal_service_token_01", "internal_service_token_02"]) {
+    writeFileSync(path.join(dir, name), token, { mode: 0o600 });
+  }
+  const result = runVerifier(["--dir", dir]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.output, /Runtime secret must be unique: internal_service_token_02/);
+  assert.ok(!result.output.includes(token));
 });

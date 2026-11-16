@@ -3,8 +3,8 @@ import test from "node:test";
 import { decryptField, hmacLookupHash, type RuntimeSecrets } from "@campus-ctf/config";
 import { CryptoService } from "./crypto.service.js";
 
-const studentKey = Buffer.alloc(32, 3);
-const flagKey = Buffer.alloc(32, 5);
+const studentKey = Buffer.alloc(32, 3).toString("base64");
+const flagKey = Buffer.alloc(32, 5).toString("base64");
 
 function cryptoService(): CryptoService {
   const secrets: RuntimeSecrets = {
@@ -28,6 +28,7 @@ function cryptoService(): CryptoService {
   };
 
   return new CryptoService({
+    onModuleInit: () => {},
     getRuntimeSecrets: () => secrets,
   });
 }

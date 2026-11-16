@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { consumeClearCertificate } from "../lib/server-api";
 import type { ClearCertificate } from "../lib/types";
 import { formatDateTime } from "../lib/types";
+import { isCertificateNavigation, isPrefetchRequest, noStoreHeaders, publicUrl } from "../lib/request-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -166,37 +167,54 @@ function certificateHtml(certificate: ClearCertificate): string {
 }
 
 export async function GET(request: NextRequest) {
+  // A speculative navigation must never spend the participant's single view.
+  if (isPrefetchRequest(request)) {
+    return new NextResponse(null, { status: 204, headers: noStoreHeaders() });
+  }
+  // SameSite cookies can accompany sibling-origin images or frames. Reject
+  // those requests before the backend can consume the participant's view.
+  if (!isCertificateNavigation(request)) {
+    return new NextResponse("클리어 인증은 제출 화면에서 직접 열어주세요.", {
+      status: 403,
+      headers: noStoreHeaders(),
+    });
+  }
+
   const result = await consumeClearCertificate(request.headers.get("cookie") ?? "");
 
   if (!result.ok && result.status === 401) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(publicUrl("/login", request), { headers: noStoreHeaders() });
   }
 
   if (!result.ok && result.status === 403) {
-    return NextResponse.redirect(new URL("/submit", request.url));
+    return NextResponse.redirect(publicUrl("/submit", request), { headers: noStoreHeaders() });
   }
 
   if (!result.ok) {
     return new NextResponse("클리어 인증 화면을 불러올 수 없습니다.", {
       status: 502,
-      headers: {
-        "cache-control": "no-store",
-      },
+      headers: noStoreHeaders(),
     });
   }
 
   const response = new NextResponse(certificateHtml(result.data), {
     status: 200,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
-      pragma: "no-cache",
-    },
+    headers: noStoreHeaders(),
   });
-  const setCookie = result.headers.get("set-cookie");
-  if (setCookie) {
-    response.headers.set("set-cookie", setCookie);
+  response.headers.set("content-type", "text/html; charset=utf-8");
+  response.headers.set("x-frame-options", "DENY");
+  response.headers.set(
+    "content-security-policy",
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  );
+  for (const setCookie of result.headers.getSetCookie()) {
+    response.headers.append("set-cookie", setCookie);
   }
 
   return response;
+}
+
+// Next otherwise synthesizes HEAD by executing GET, including its mutation.
+export function HEAD() {
+  return new NextResponse(null, { status: 200, headers: noStoreHeaders() });
 }

@@ -1,11 +1,10 @@
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 const serviceId = "service-07";
 const serviceName = "자유게시판";
@@ -118,6 +117,8 @@ const SERVICE_PAGE_STYLE = `
       @media (max-width: 640px) { .serviceShell { width: min(100% - 32px, 1280px); } form.search { display: grid; } .panel { overflow-x: auto; } .boardTable, table.results { min-width: 640px; } }
 `;
 
+class UpstreamUnavailableError extends Error {}
+
 type Env = Record<string, string | undefined>;
 type SecretFileReader = (path: string) => Promise<string | Buffer>;
 type FlagResponse = {
@@ -173,26 +174,33 @@ function getCookie(cookieHeader: string | undefined, name: string): string | nul
 }
 
 async function fetchCurrentUserFlag(cookieHeader: string | undefined): Promise<string | null> {
+  if (!cookieHeader || !/(?:^|;)\s*ctf_session=[^;\s]+/.test(cookieHeader)) return null;
   const serviceToken = await readInternalServiceToken();
-  if (!serviceToken) {
-    return null;
-  }
-
-  const backendRequest = buildFlagBackendRequest({
-    backendInternalUrl: process.env.BACKEND_INTERNAL_URL,
-    cookieHeader,
-    serviceToken,
-  });
+  if (!serviceToken) throw new UpstreamUnavailableError("Service authentication is unavailable");
 
   try {
-    const response = await fetch(backendRequest.url, { headers: backendRequest.headers });
+    const backendRequest = buildFlagBackendRequest({
+      backendInternalUrl: process.env.BACKEND_INTERNAL_URL,
+      cookieHeader,
+      serviceToken,
+    });
+    const response = await fetch(backendRequest.url, {
+      headers: backendRequest.headers,
+      signal: AbortSignal.timeout(5_000),
+      redirect: "error",
+    });
     if (!response.ok) {
-      return null;
+      await response.body?.cancel();
+      if (response.status === 401 || response.status === 403) return null;
+      throw new UpstreamUnavailableError("Flag service is unavailable");
     }
     const body = (await response.json()) as FlagResponse;
-    return body.flagId === "FLAG-07" && typeof body.flag === "string" ? body.flag : null;
+    if (body?.flagId !== "FLAG-07" || typeof body.flag !== "string") {
+      throw new UpstreamUnavailableError("Invalid flag service response");
+    }
+    return body.flag;
   } catch {
-    return null;
+    throw new UpstreamUnavailableError("Flag service is unavailable");
   }
 }
 
@@ -206,71 +214,116 @@ export function buildSearchSql(queryExpression: string): string {
   return `SELECT id, title, author FROM posts WHERE title LIKE '%${queryExpression}%'`;
 }
 
-async function runSqlite(dbPath: string, statements: string[]): Promise<string> {
-  return new Promise((resolveOutput, reject) => {
-    // Keep the intended SQL injection inside the per-session SQLite database.
-    // Passing attacker-controlled text through stdin would also expose sqlite3
-    // dot commands (for example `.shell`) which is outside the challenge scope.
-    const child = spawn("sqlite3", ["-safe", "-batch", "-json", dbPath, statements.join("\n")], {
-      stdio: ["ignore", "pipe", "pipe"],
+const SQLITE_TIMEOUT_MS = 2_000;
+const SQLITE_MAX_OUTPUT_BYTES = 256 * 1024;
+const SQLITE_MAX_CONCURRENT = 8;
+let activeSqliteProcesses = 0;
+
+async function runSqlite(dbPath: string, statements: string[], readOnly = false): Promise<string> {
+  if (activeSqliteProcesses >= SQLITE_MAX_CONCURRENT) {
+    throw new Error("SQLite concurrency limit reached");
+  }
+  activeSqliteProcesses += 1;
+  try {
+    return await new Promise<string>((resolveOutput, reject) => {
+      // The intentional SQL injection is limited to reading this session's database.
+      // SQL goes in an argument, not stdin, so sqlite3 dot commands cannot run.
+      const args = ["-safe", "-batch", "-json", ...(readOnly ? ["-readonly"] : []), dbPath, statements.join("\n")];
+      const child = spawn("sqlite3", args, { stdio: ["ignore", "pipe", "pipe"] });
+      const stdout: Buffer[] = [];
+      let outputBytes = 0;
+      let failure: Error | undefined;
+      const stop = (message: string) => {
+        failure ??= new Error(message);
+        child.kill("SIGKILL");
+      };
+      const timeout = setTimeout(() => stop("SQLite execution timeout exceeded"), SQLITE_TIMEOUT_MS);
+      timeout.unref();
+      child.stdout.on("data", (chunk: Buffer) => {
+        outputBytes += chunk.length;
+        if (outputBytes > SQLITE_MAX_OUTPUT_BYTES) {
+          stop("SQLite output limit exceeded");
+        } else if (!failure) {
+          stdout.push(chunk);
+        }
+      });
+      // Errors can contain SQL, flags, or file paths. Do not retain or return them.
+      child.stderr.on("data", (chunk: Buffer) => {
+        outputBytes += chunk.length;
+        if (outputBytes > SQLITE_MAX_OUTPUT_BYTES) stop("SQLite output limit exceeded");
+      });
+      child.on("error", (error) => { failure = error; });
+      child.on("close", (code) => {
+        clearTimeout(timeout);
+        if (failure) reject(failure);
+        else if (code !== 0) reject(new Error("SQLite query rejected in read-only safe mode"));
+        else resolveOutput(Buffer.concat(stdout).toString("utf8"));
+      });
     });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf8");
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolveOutput(stdout);
-      } else {
-        reject(new Error(stderr || `sqlite exited with code ${code}`));
-      }
-    });
-  });
+  } finally {
+    activeSqliteProcesses -= 1;
+  }
 }
 
 function sqlString(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
+const databaseInitializations = new Map<string, Promise<void>>();
+
+async function initializeBoardDatabase(dbPath: string, flag: string): Promise<void> {
+  await mkdir(dirname(dbPath), { recursive: true });
+  const temporaryPath = `${dbPath}.${randomBytes(8).toString("hex")}.tmp`;
+  try {
+    await runSqlite(temporaryPath, [
+      "BEGIN;",
+      "CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT NOT NULL, content TEXT NOT NULL, author TEXT NOT NULL);",
+      "CREATE TABLE flags (id INTEGER PRIMARY KEY, flag TEXT NOT NULL, source TEXT NOT NULL);",
+      "INSERT INTO posts (id, title, content, author) VALUES (1, '중간고사 일정 안내', '중간고사 기간에는 상담 운영이 축소됩니다.', '교무과');",
+      "INSERT INTO posts (id, title, content, author) VALUES (2, '교내 미니 축제 참가 안내', '부스 신청은 학생처 홈페이지에서 받습니다.', '축제기획단');",
+      "INSERT INTO posts (id, title, content, author) VALUES (3, '프로그래밍 과제 안내', '제출 양식과 마감 일정을 확인하세요.', '컴퓨터공학과');",
+      "INSERT INTO posts (id, title, content, author) VALUES (4, '도서관 운영 시간 변경 안내', '시험 기간 동안 야간 개방 시간이 연장됩니다.', '도서관');",
+      `INSERT INTO flags (id, flag, source) VALUES (1, ${sqlString(flag)}, 'runtime');`,
+      "COMMIT;",
+    ]);
+    // A cached path is visible only once all tables and the participant flag exist.
+    await rename(temporaryPath, dbPath);
+  } finally {
+    await rm(temporaryPath, { force: true });
+    await rm(`${temporaryPath}-journal`, { force: true });
+  }
+}
+
 export async function ensureBoardDatabase(
   cookieHeader: string | undefined,
   fetchCurrentFlag: CurrentFlagFetcher = fetchCurrentUserFlag,
 ): Promise<string | null> {
-  if (!cookieHeader || !getCookie(cookieHeader, "ctf_session")) {
-    return null;
-  }
+  if (!cookieHeader || !getCookie(cookieHeader, "ctf_session")) return null;
+
+  // Cached puzzle state never replaces authentication: logout and expiry apply here too.
+  const flag = await fetchCurrentFlag(cookieHeader);
+  if (!flag) return null;
 
   const dbPath = buildInstancePath(cookieHeader);
-  if (existsSync(dbPath)) {
-    return dbPath;
+  let initialization = databaseInitializations.get(dbPath);
+  if (!initialization && existsSync(dbPath)) return dbPath;
+  if (!initialization) {
+    initialization = initializeBoardDatabase(dbPath, flag);
+    databaseInitializations.set(dbPath, initialization);
   }
-
-  const flag = await fetchCurrentFlag(cookieHeader);
-  if (!flag) {
-    return null;
+  try {
+    await initialization;
+  } finally {
+    if (databaseInitializations.get(dbPath) === initialization) databaseInitializations.delete(dbPath);
   }
-
-  await mkdir(dirname(dbPath), { recursive: true });
-  await runSqlite(dbPath, [
-    "CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT NOT NULL, content TEXT NOT NULL, author TEXT NOT NULL);",
-    "CREATE TABLE flags (id INTEGER PRIMARY KEY, flag TEXT NOT NULL, source TEXT NOT NULL);",
-    "INSERT INTO posts (id, title, content, author) VALUES (1, '중간고사 일정 안내', '중간고사 기간에는 상담 운영이 축소됩니다.', '교무과');",
-    "INSERT INTO posts (id, title, content, author) VALUES (2, '교내 미니 축제 참가 안내', '부스 신청은 학생처 홈페이지에서 받습니다.', '축제기획단');",
-    "INSERT INTO posts (id, title, content, author) VALUES (3, '프로그래밍 과제 안내', '제출 양식과 마감 일정을 확인하세요.', '컴퓨터공학과');",
-    "INSERT INTO posts (id, title, content, author) VALUES (4, '도서관 운영 시간 변경 안내', '시험 기간 동안 야간 개방 시간이 연장됩니다.', '도서관');",
-    `INSERT INTO flags (id, flag, source) VALUES (1, ${sqlString(flag)}, 'runtime');`,
-  ]);
-
   return dbPath;
 }
 
 export async function searchPosts(dbPath: string, queryExpression: string): Promise<Array<Record<string, unknown>>> {
-  const output = await runSqlite(dbPath, [buildSearchSql(queryExpression)]);
+  if (Buffer.byteLength(queryExpression, "utf8") > 4_096) {
+    throw new Error("Search query exceeds the size limit");
+  }
+  const output = await runSqlite(dbPath, [buildSearchSql(queryExpression)], true);
   return output.trim() ? (JSON.parse(output) as Array<Record<string, unknown>>) : [];
 }
 
@@ -378,12 +431,40 @@ export function renderErrorPage(): string {
 
 export function createChallengeServer() {
   return createServer((request, response) => {
-    void handleRequest(request, response);
+    void handleRequest(request, response).catch((error: unknown) => {
+      // Do not let a filesystem, upstream, or parsing failure terminate the service.
+      if (response.destroyed || response.writableEnded) return;
+      if (response.headersSent) {
+        response.destroy();
+        return;
+      }
+      response.writeHead(error instanceof UpstreamUnavailableError ? 503 : 500, {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      response.end("요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.\n");
+    });
   });
 }
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  const url = new URL(request.url ?? "/", "http://localhost");
+  let url: URL;
+  try {
+    url = new URL(request.url ?? "/", "http://localhost");
+  } catch {
+    response.writeHead(400, {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    response.end("잘못된 요청입니다.\n");
+    return;
+  }
+  const allowedMethod = "GET";
+  if (request.method !== allowedMethod) {
+    response.writeHead(405, { allow: allowedMethod, "cache-control": "no-store" });
+    response.end();
+    return;
+  }
 
   if (url.pathname === "/health") {
     response.writeHead(200, {

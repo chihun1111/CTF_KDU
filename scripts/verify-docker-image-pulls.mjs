@@ -1,11 +1,11 @@
 import { spawn } from "node:child_process";
 
-const DEFAULT_IMAGES = ["node:24-bookworm-slim", "nginx:1.27-alpine", "postgres:17-alpine", "redis:7.4-alpine"];
+const DEFAULT_IMAGES = ["node:24-bookworm-slim", "nginx:1.30.6-alpine", "postgres:17-alpine", "redis:7.4-alpine"];
 
 function parseArgs(argv) {
   const options = {
     images: [],
-    timeoutMs: 15000,
+    timeoutMs: 120000,
     printImages: false,
   };
   const failures = [];

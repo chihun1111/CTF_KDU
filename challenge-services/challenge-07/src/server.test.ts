@@ -1,5 +1,7 @@
+import { registerHttpRuntimeTests } from "../../test-support/http-runtime.mjs";
+import { createChallengeServer } from "./server.js";
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -91,10 +93,12 @@ test("challenge-07 board pages keep flag material out of static renders", () => 
 
 test("challenge-07 seeds the session database with only the current user's flag", { skip: process.platform === "win32" }, async (t) => {
   const stateRoot = await mkdtemp(join(tmpdir(), "challenge-07-state-"));
-  t.beforeEach ?? undefined;
+  const previousStateDirectory = process.env.STATE_DIR;
   process.env.STATE_DIR = stateRoot;
-  t.after(() => {
-    delete process.env.STATE_DIR;
+  t.after(async () => {
+    if (previousStateDirectory === undefined) delete process.env.STATE_DIR;
+    else process.env.STATE_DIR = previousStateDirectory;
+    await rm(stateRoot, { recursive: true, force: true });
   });
 
   const cookie = "ctf_session=board-session-cookie";
@@ -118,4 +122,33 @@ test("challenge-07 seeds the session database with only the current user's flag"
     () => searchPosts(dbPath, "' UNION SELECT 1, readfile('/run/secrets/internal_service_token_07'), 'runtime'--"),
     /disabled|not authorized|safe mode|unsafe use|no such function/i,
   );
+
+  assert.equal(await ensureBoardDatabase(cookie, async () => null), null,
+    "an existing database must not authorize a revoked or expired session");
+
+  await assert.rejects(() => searchPosts(dbPath, "'; DROP TABLE flags;--"), /read-only|rejected/i);
+  const preserved = await searchPosts(dbPath, "' UNION SELECT id, flag, source FROM flags--");
+  assert(preserved.some((row) => row.title === flag), "write attempts must leave the intended puzzle solvable");
+
+  const concurrentPaths = await Promise.all(Array.from({ length: 12 }, () =>
+    ensureBoardDatabase("ctf_session=concurrent-first-visit", async () => "KDUCTF" + "{concurrent_flag_07}"),
+  ));
+  assert(concurrentPaths.every((path) => path === concurrentPaths[0]));
+  assert(concurrentPaths[0]);
+  const concurrentRows = await searchPosts(concurrentPaths[0], "' UNION SELECT id, flag, source FROM flags--");
+  assert.equal(concurrentRows.filter((row) => row.title === "KDUCTF" + "{concurrent_flag_07}").length, 1);
+  assert((await readdir(stateRoot)).every((name) => name.endsWith(".sqlite")), "initialization must leave no partial files");
+
+  await assert.rejects(() => searchPosts(dbPath, "a".repeat(4_097)), /size limit/);
+  await assert.rejects(
+    () => searchPosts(dbPath, "' UNION SELECT 1, hex(zeroblob(200000)), 'runtime'--"),
+    /output limit/,
+  );
+  await assert.rejects(
+    () => searchPosts(dbPath, "' UNION SELECT 1, (WITH RECURSIVE counter(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM counter) SELECT sum(n) FROM counter), 'runtime'--"),
+    /timeout/,
+  );
+  assert.equal((await searchPosts(dbPath, "")).length, 4, "the service must recover after rejected expensive queries");
 });
+
+registerHttpRuntimeTests({ createServer: createChallengeServer, challengeId: "07" });
