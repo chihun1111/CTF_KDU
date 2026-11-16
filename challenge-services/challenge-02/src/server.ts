@@ -6,12 +6,20 @@ const serviceId = "service-02";
 const serviceName = "서비스 상태";
 const unitName = "전산실";
 const challengeId = "02";
+// Runtime smoke verifies this display metadata against the shared public catalog.
+const challengeDifficulty = "초급";
+const challengeDifficultyLevel = 2;
+const CHALLENGE_CONTEXT = `<div class="challengeContext" aria-label="문제 정보"><span class="challengeNumber">문제 ${challengeId}</span><span class="difficultyBadge" data-level="${challengeDifficultyLevel}">난이도: ${challengeDifficulty}</span></div>`;
 const PUBLIC_PREFIX = "/challenges/02";
 
 const SERVICE_PAGE_STYLE = `
       :root { color-scheme: light; --bg: #f8fafc; --surface: #ffffff; --surface-muted: #f4f3f8; --text: #1a1c1f; --muted: #515f74; --border: #e2e8f0; --accent: #003366; --accent-strong: #001e40; --success: #166534; --warning: #92400e; }
       * { box-sizing: border-box; }
       body { margin: 0; background: var(--bg); color: var(--text); font-family: "Pretendard", "Noto Sans KR", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; line-height: 1.5; }
+      .challengeContext { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; grid-column: 1 / -1; margin: 0 0 16px; }
+      .challengeNumber { color: var(--accent); font-size: .86rem; font-weight: 800; white-space: nowrap; }
+      .difficultyBadge { display: inline-flex; align-items: center; min-height: 28px; border: 1px solid currentColor; border-radius: 999px; padding: 2px 10px; font-size: .82rem; font-weight: 800; white-space: nowrap; }
+      .difficultyBadge[data-level="2"] { color: #075985; background: #f0f9ff; }
       .campusGlobalHeader {
         border-bottom: 1px solid #e2e8f0;
         background: #ffffff;
@@ -217,6 +225,7 @@ export function renderStatusPage(): string {
   <body>
     <header class="campusGlobalHeader"><div class="campusGlobalHeaderInner"><a class="campusGlobalBrand" href="/" aria-label="문제 목록으로 돌아가기"><span class="campusGlobalBrandMark">KDU</span><span class="campusGlobalBrandText">교내 CTF</span></a><a class="campusGlobalHomeLink" href="/">문제 목록</a></div></header>
     <main class="serviceShell">
+      ${CHALLENGE_CONTEXT}
       <header class="serviceHeader">
         <p class="unit">${unitName}</p>
         <h1>${serviceName}</h1>

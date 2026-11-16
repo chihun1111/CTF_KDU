@@ -160,8 +160,9 @@ test("runtime-smoke accepts the current services response shape", async () => {
     }
 
     if (serviceRoutes.includes(url.pathname)) {
+      const service = services.find((item) => item.serviceHref === url.pathname);
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(
-        `<!doctype html><html><body>${MOCK_GLOBAL_HEADER}<main>서비스</main></body></html>`,
+        `<!doctype html><html><body>${MOCK_GLOBAL_HEADER}<main><span class="difficultyBadge" data-level="${service.difficultyLevel}">난이도: ${service.difficulty}</span>서비스</main></body></html>`,
       );
       return;
     }

@@ -90,11 +90,14 @@ async function openService(page, index) {
   expect(navigations, 'one main-page click produces exactly one challenge navigation').toEqual([services[index]]);
   expect(otherChallengeRequests, 'a challenge does not load another challenge').toEqual([]);
   await expect(page.getByRole('link', { name: '문제 목록', exact: true })).toBeVisible();
+  const difficulty = page.locator('.challengeContext .difficultyBadge');
+  await expect(difficulty).toHaveText(`난이도: ${difficulties[index]}`);
+  await expect(difficulty).toBeVisible();
   const linkedPaths = await page.locator('a[href], form[action], script[src]').evaluateAll((elements) => elements
     .map((element) => element.getAttribute('href') ?? element.getAttribute('action') ?? element.getAttribute('src'))
     .filter((path) => /^\/challenges\/0[1-8]\//.test(path)));
   expect(linkedPaths.every((path) => path.startsWith(services[index])), 'all challenge links stay inside this problem').toBe(true);
-  record('direct main-to-challenge navigation', { challenge: index + 1, navigations: navigations.length });
+  record('direct main-to-challenge navigation', { challenge: index + 1, navigations: navigations.length, difficulty: difficulties[index] });
 }
 
 async function publicAsset(page, path) {
@@ -176,7 +179,7 @@ test('desktop participant journey: discovery, partial grading and fixture-assist
   await test.step('difficulty labels and filters help select an independent problem', async () => {
     const cards = page.locator('.serviceDirectoryCard');
     for (let index = 0; index < services.length; index += 1) {
-      await expect(cards.nth(index).locator('.difficultyBadge')).toHaveText(difficulties[index]);
+      await expect(cards.nth(index).locator('.difficultyBadge')).toHaveText(`난이도: ${difficulties[index]}`);
       await expect(cards.nth(index).locator('a')).toHaveCount(1);
       await expect(cards.nth(index).locator('a')).toHaveAttribute('href', services[index]);
     }

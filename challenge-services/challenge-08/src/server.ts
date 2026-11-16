@@ -7,6 +7,9 @@ const serviceId = "service-08";
 const serviceName = "특별상 수령 안내";
 const unitName = "축제준비위원회";
 const challengeId = "08";
+// Runtime smoke verifies these rendered values against the shared public catalog.
+const challengeDifficulty = "고급";
+const challengeDifficultyLevel = 4;
 const ACCESS_GRANT_TTL_MS = 10 * 60 * 1000;
 const PUBLIC_PREFIX = "/challenges/08";
 
@@ -86,6 +89,9 @@ const SERVICE_PAGE_STYLE = `
         }
       }
       .serviceShell { width: min(1280px, calc(100% - 48px)); margin: 0 auto; padding: 40px 0; }
+      .challengeContext { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; grid-column: 1 / -1; margin: 0 0 16px; }
+      .challengeNumber { color: var(--accent); font-size: .86rem; font-weight: 800; white-space: nowrap; }
+      .difficultyBadge { display: inline-flex; align-items: center; min-height: 28px; border: 1px solid currentColor; border-radius: 999px; padding: 2px 10px; color: #6b21a8; background: #faf5ff; font-size: .82rem; font-weight: 800; white-space: nowrap; }
       .serviceHeader, .panel { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 22px; margin-bottom: 16px; }
       .unit { margin: 0 0 8px; color: var(--accent); font-size: .82rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
       h1 { margin: 0; color: var(--accent-strong); font-size: clamp(2rem, 5vw, 3rem); line-height: 1.1; letter-spacing: -.02em; }
@@ -424,7 +430,10 @@ function renderShell(title: string, bodyContent: string): string {
         <a class="campusGlobalHomeLink" href="/">문제 목록</a>
       </div>
     </header>
-    <main class="serviceShell">${bodyContent}</main>
+    <main class="serviceShell">
+      <div class="challengeContext" aria-label="문제 정보"><span class="challengeNumber">문제 ${challengeId}</span><span class="difficultyBadge" data-level="${challengeDifficultyLevel}">난이도: ${challengeDifficulty}</span></div>
+      ${bodyContent}
+    </main>
   </body>
 </html>`;
 }

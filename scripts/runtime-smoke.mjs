@@ -208,6 +208,7 @@ async function main() {
 
   const results = [];
   let cookie = "";
+  let publicServices = [];
 
   async function step(name, callback) {
     await callback();
@@ -295,6 +296,7 @@ async function main() {
       ),
       "service list exposed a legacy guide, artifact, or claim link",
     );
+    publicServices = body.services;
   });
 
   await step("legacy artifact download route is disabled", async () => {
@@ -317,6 +319,10 @@ async function main() {
       assert(contentType.includes("text/html"), `${route} content-type was ${contentType}`);
       const body = await response.text();
       assertServiceGlobalHeader(body, route);
+      const service = publicServices.find((item) => item.id === id);
+      const badge = body.match(/<span\b([^>]*\bclass=["']difficultyBadge["'][^>]*)>([^<]*)<\/span>/);
+      assert(badge && badge[2].trim() === `난이도: ${service.difficulty}`, `${route} difficulty does not match the public catalog`);
+      assert(new RegExp(`data-level=["']${service.difficultyLevel}["']`).test(badge[1]), `${route} difficulty level does not match the public catalog`);
       const references = [...body.matchAll(/\/challenges\/(0[1-8])\//g)].map((match) => match[1]);
       assert(references.every((number) => number === id), `${route} depends on another challenge page`);
     }

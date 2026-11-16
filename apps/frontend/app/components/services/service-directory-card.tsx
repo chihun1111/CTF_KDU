@@ -9,8 +9,8 @@ export function ServiceDirectoryCard({ service }: ServiceDirectoryCardProps) {
     <article className="serviceDirectoryCard" aria-labelledby={`challenge-${service.id}-title`}>
       <div className="serviceCardTop">
         <span className="serviceNumber">문제 {service.id}</span>
-        <span className="difficultyBadge" data-level={service.difficultyLevel} aria-label={`난이도 ${service.difficulty}`}>
-          {service.difficulty}
+        <span className="difficultyBadge" data-level={service.difficultyLevel} aria-label={`난이도: ${service.difficulty}`}>
+          난이도: {service.difficulty}
         </span>
       </div>
       <div className="serviceCardBody">
