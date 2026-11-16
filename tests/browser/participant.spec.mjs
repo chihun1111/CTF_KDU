@@ -25,6 +25,9 @@ function oneFlag(source, label) {
 
 async function screenshot(page, name, masks = []) {
   await mkdir(outputDir, { recursive: true });
+  // Stabilize sticky headers and mask coordinates for full-page captures after
+  // focus or a button click has scrolled a long form.
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: `${outputDir}/${name}.png`, fullPage: true,
     timeout: 10_000,
@@ -155,7 +158,7 @@ test('desktop participant journey: discovery, partial grading and fixture-assist
 
   await test.step('03: inspect linked assignment details and neighboring records', async () => {
     await openService(page, 2);
-    await page.locator('a[href="/student/assignments/view?id=1"]').click();
+    await page.getByRole('link', { name: '프로그래밍 기초 과제 1', exact: true }).click();
     await expect(page).toHaveURL(/\/student\/assignments\/view\?id=1$/);
     for (const id of [2, 3, 4]) await page.goto(`/student/assignments/view?id=${id}`);
     flags[2] = oneFlag(await page.locator('body').innerText(), '03 detail');
@@ -222,8 +225,9 @@ test('desktop participant journey: discovery, partial grading and fixture-assist
 
   await test.step('hint navigation and partial submission work without losing progress on reload', async () => {
     await page.getByRole('link', { name: '전체 서비스', exact: true }).click();
-    await page.getByRole('link', { name: '운영 공지', exact: true }).click();
+    await page.getByRole('link', { name: '힌트 · 운영 공지', exact: true }).click();
     await expect(page).toHaveURL(/\/hints$/);
+    await expect(page.getByRole('heading', { name: '공개 힌트', exact: true })).toBeVisible();
     await expect(page.locator('.hintChallengeCard')).toHaveCount(8);
     record('public hint stages before administrator changes', {
       locked: await page.locator('.hintStage.locked').count(),
@@ -280,6 +284,24 @@ test('mobile viewport: registration, all service entry pages, search and submit 
       await openService(page, index);
       await layout(page, `mobile service ${index + 1}`);
       await screenshot(page, `mobile-${String(index + 1).padStart(2, '0')}`);
+      if (index === 2) {
+        const detail = page.getByRole('link', { name: '프로그래밍 기초 과제 1', exact: true });
+        const visibility = await detail.evaluate((link) => {
+          const bounds = link.getBoundingClientRect();
+          const panel = link.closest('.panel');
+          const panelBounds = panel.getBoundingClientRect();
+          return {
+            scrollLeft: panel.scrollLeft,
+            fullyWithinVisibleColumns: bounds.left >= panelBounds.left && bounds.right <= Math.min(panelBounds.right, window.innerWidth),
+          };
+        });
+        expect(visibility.scrollLeft, 'assignment list starts without horizontal scrolling').toBe(0);
+        expect(visibility.fullyWithinVisibleColumns, 'the primary detail link is visible in the initial columns').toBe(true);
+        await detail.click();
+        await expect(page).toHaveURL(/\/student\/assignments\/view\?id=1$/);
+        await expect(page.getByRole('heading', { name: '프로그래밍 기초 과제 1', exact: true })).toBeVisible();
+        record('mobile 03 detail opens from the initially visible assignment title');
+      }
     });
   }
   await page.goto(services[6]);

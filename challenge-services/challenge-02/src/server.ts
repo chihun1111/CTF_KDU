@@ -251,7 +251,7 @@ export function renderStatusPage(): string {
 
 export function renderStatusScript(): string {
   return `// 서비스 상태 조회 스크립트
-// 운영 규칙 문서는 루트의 표준 파일을 참고하세요.
+// 운영 규칙 문서는 이 상태 서비스의 기본 경로 아래에 있는 표준 파일을 참고하세요.
 async function loadStatus() {
   try {
     const res = await fetch("${PUBLIC_PREFIX}/api/status");

@@ -43,7 +43,7 @@ export default async function HubPage() {
               제출 페이지
             </Link>
             <Link className="secondaryLink" href="/hints">
-              운영 공지
+              힌트 · 운영 공지
             </Link>
             <LogoutButton />
           </nav>

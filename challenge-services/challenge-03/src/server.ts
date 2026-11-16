@@ -225,8 +225,8 @@ export function renderAssignmentList(): string {
         <table class="assignmentTable">
           <thead><tr><th>번호</th><th>과제명</th><th>제출 상태</th><th>상세 조회</th></tr></thead>
           <tbody>
-            <tr><td>1</td><td>프로그래밍 기초 과제 1</td><td><span class="badge">제출 완료</span></td><td><a href="/student/assignments/view?id=1">내용 보기</a></td></tr>
-            <tr><td>2</td><td>웹프로그래밍 보고서</td><td><span class="badge">제출 완료</span></td><td><a href="/student/assignments/view?id=2">내용 보기</a></td></tr>
+            <tr><td>1</td><td><a href="/student/assignments/view?id=1">프로그래밍 기초 과제 1</a></td><td><span class="badge">제출 완료</span></td><td><a href="/student/assignments/view?id=1">내용 보기</a></td></tr>
+            <tr><td>2</td><td><a href="/student/assignments/view?id=2">웹프로그래밍 보고서</a></td><td><span class="badge">제출 완료</span></td><td><a href="/student/assignments/view?id=2">내용 보기</a></td></tr>
           </tbody>
         </table>
       </section>
